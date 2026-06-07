@@ -1,0 +1,259 @@
+:root {
+  --bg: #f4efe7;
+  --bg-deep: #e8dfd1;
+  --surface: #fff9f0;
+  --surface-strong: #fff4e3;
+  --ink: #1e1a16;
+  --ink-muted: #675a49;
+  --accent: #1f6d5a;
+  --accent-soft: #d2efe7;
+  --line: #d4c8b9;
+  --selected: #ffdfb3;
+  --shadow: 0 14px 40px rgba(63, 42, 19, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 5% 5%, #fff7eb 0%, transparent 35%),
+    radial-gradient(circle at 95% 20%, #e4f4ef 0%, transparent 30%),
+    linear-gradient(145deg, var(--bg) 0%, var(--bg-deep) 100%);
+  min-height: 100vh;
+}
+
+.app-shell {
+  width: min(1200px, 94vw);
+  margin: 2rem auto 3rem;
+  display: grid;
+  gap: 1.2rem;
+}
+
+.hero,
+.picker-panel,
+.table-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 1.6rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+h1,
+h2 {
+  font-family: "Fraunces", serif;
+  margin: 0.3rem 0 0.6rem;
+}
+
+h1 {
+  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+}
+
+h2 {
+  font-size: 1.3rem;
+}
+
+.subtitle,
+.helper-text {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+.picker-panel,
+.table-panel {
+  padding: 1.1rem;
+}
+
+.search-wrap {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.search-wrap label {
+  font-weight: 600;
+}
+
+.search-wrap input {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.search-wrap input:focus {
+  outline: 2px solid #99d6c6;
+  border-color: var(--accent);
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 1rem;
+}
+
+.list-pane,
+.selected-pane {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  padding: 0.8rem;
+}
+
+.course-list {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  max-height: 340px;
+  overflow: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.course-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: #fff;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.course-item:hover {
+  transform: translateY(-1px);
+  border-color: #bfa380;
+}
+
+.course-item.selected {
+  background: var(--selected);
+  border-color: #d99f4d;
+}
+
+.course-title {
+  font-weight: 700;
+}
+
+.course-meta {
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  margin-top: 0.25rem;
+}
+
+.selected-courses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.8rem 0;
+  min-height: 42px;
+}
+
+.tag {
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #0f4739;
+  border: 1px solid #95cdbf;
+  font-size: 0.86rem;
+}
+
+.ghost-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  border-color: #b89c78;
+}
+
+.selected-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.table-head {
+  display: flex;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  min-width: 760px;
+}
+
+th,
+td {
+  border: 1px solid var(--line);
+  padding: 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #f7ead6;
+  font-size: 0.9rem;
+}
+
+td {
+  font-size: 0.88rem;
+  min-width: 128px;
+  height: 64px;
+}
+
+td.filled {
+  background: #fef4e4;
+}
+
+.slot-title {
+  font-weight: 700;
+  display: block;
+}
+
+.slot-venue {
+  color: var(--ink-muted);
+  display: block;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 900px) {
+  .picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    width: min(1200px, 96vw);
+    margin-top: 1rem;
+  }
+}
