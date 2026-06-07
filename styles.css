@@ -35,6 +35,7 @@ body {
 }
 
 .hero,
+.about-panel,
 .picker-panel,
 .table-panel {
   background: var(--surface);
@@ -45,6 +46,10 @@ body {
 
 .hero {
   padding: 1.6rem;
+}
+
+.about-panel {
+  padding: 1.1rem 1.3rem;
 }
 
 .eyebrow {
