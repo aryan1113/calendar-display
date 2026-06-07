@@ -32,7 +32,13 @@ body {
   width: min(1200px, calc(100vw - 1.5rem));
   margin: clamp(0.9rem, 2.5vw, 2rem) auto 3rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.2rem;
+}
+
+.app-shell > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .hero,
@@ -215,6 +221,7 @@ h2 {
 .table-wrap {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 table {
