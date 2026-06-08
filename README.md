@@ -116,6 +116,9 @@ Note: opening [index.html](index.html) directly via file explorer may fail to lo
 - current week timetable rendering
 - dedup within each day+slot cell (same course/venue/section shown once)
 - copy share link button
+- custom share text using your name (`Checkout {name}'s timetable from: {link}`)
+- export timetable as downloadable PNG image
+- native image sharing (WhatsApp, Telegram, and any app supported by device share sheet)
 
 ## Shareable URL State
 

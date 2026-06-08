@@ -177,6 +177,34 @@ h2 {
   min-height: 42px;
 }
 
+.share-panel {
+  border: 1px dashed #cdb89b;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.7rem;
+  margin: 0.75rem 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.share-panel label {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.share-panel input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.62rem 0.75rem;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+.share-panel input:focus {
+  outline: 2px solid #99d6c6;
+  border-color: var(--accent);
+}
+
 .tag {
   padding: 0.4rem 0.65rem;
   border-radius: 999px;
@@ -262,6 +290,46 @@ h2 {
 
 .about-content a {
   color: #2d6757;
+}
+
+#capture-root {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 980px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.capture-card {
+  background: #fffdf9;
+  border: 1px solid #d9cab5;
+  border-radius: 16px;
+  padding: 1rem;
+  color: #221b14;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.capture-card h3 {
+  font-family: "Fraunces", serif;
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.capture-subtitle {
+  margin: 0.3rem 0 0.8rem;
+  color: #5f5448;
+  font-size: 0.88rem;
+}
+
+.capture-meta {
+  margin: 0 0 0.85rem;
+  color: #4f453a;
+  font-size: 0.84rem;
+}
+
+.capture-card table {
+  min-width: 0;
 }
 
 table {

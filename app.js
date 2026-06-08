@@ -15,8 +15,20 @@ const state = {
   courseMap: new Map(),
   courseIndexMap: new Map(),
   selectedCourses: new Set(),
-  search: ""
+  search: "",
+  shareName: "",
+  weekLabelText: "Current week"
 };
+
+const EXPORT_IMAGE_NAME = "iimk-timetable.png";
+
+function toSafeFileSlug(value) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
 
 function parseIsoToLocalDate(isoDateTime) {
   if (!isoDateTime) return null;
@@ -83,6 +95,11 @@ function getSelectionFromUrl(courseMap, courseIndexMap) {
   return next;
 }
 
+function getShareNameFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("n") || "").trim();
+}
+
 function writeSelectionToUrl() {
   const selectedIds = [...state.selectedCourses]
     .map((key) => state.courseIndexMap.get(key))
@@ -96,6 +113,12 @@ function writeSelectionToUrl() {
     params.delete("c");
   }
 
+  if (state.shareName) {
+    params.set("n", state.shareName);
+  } else {
+    params.delete("n");
+  }
+
   const nextQuery = params.toString();
   const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
   window.history.replaceState({}, "", nextUrl);
@@ -107,7 +130,7 @@ async function copyShareLink() {
 
   const link = window.location.href;
   try {
-    await navigator.clipboard.writeText(link);
+    await writeTextToClipboard(link);
     btn.textContent = "Copied";
   } catch (_) {
     btn.textContent = "Copy failed";
@@ -116,6 +139,205 @@ async function copyShareLink() {
   setTimeout(() => {
     btn.textContent = "Copy share link";
   }, 1200);
+}
+
+async function writeTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const ok = document.execCommand("copy");
+  textarea.remove();
+
+  if (!ok) {
+    throw new Error("Clipboard copy is not available.");
+  }
+}
+
+async function downloadBlob(blob, fileName) {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function getShareIntroText() {
+  const name = state.shareName || "Someone";
+  return `Checkout ${name}'s timetable from: ${window.location.href}`;
+}
+
+async function copyCustomShareText() {
+  const btn = document.querySelector("#copy-share-text");
+  if (!btn) return;
+
+  const text = getShareIntroText();
+  try {
+    await writeTextToClipboard(text);
+    btn.textContent = "Text copied";
+  } catch (_) {
+    btn.textContent = "Copy failed";
+  }
+
+  setTimeout(() => {
+    btn.textContent = "Copy share text";
+  }, 1200);
+}
+
+function buildCaptureMarkup() {
+  const table = document.querySelector("#timetable");
+  if (!table) return "";
+
+  const selectedCount = state.selectedCourses.size;
+  const selectedLabel = selectedCount === 1 ? "course" : "courses";
+  const namePrefix = state.shareName ? `${escapeHtml(state.shareName)}'s` : "My";
+
+  return `
+    <div class="capture-card">
+      <h3>${namePrefix} IIMK Timetable</h3>
+      <p class="capture-subtitle">${escapeHtml(state.weekLabelText)}</p>
+      <p class="capture-meta">${selectedCount} ${selectedLabel} selected</p>
+      ${table.outerHTML}
+    </div>
+  `;
+}
+
+async function getTimetableBlob() {
+  const captureRoot = document.querySelector("#capture-root");
+  if (!captureRoot) {
+    throw new Error("Capture area not found.");
+  }
+
+  captureRoot.innerHTML = buildCaptureMarkup();
+
+  const card = captureRoot.querySelector(".capture-card");
+  if (!card) {
+    throw new Error("Could not build timetable capture.");
+  }
+
+  if (typeof window.html2canvas !== "function") {
+    throw new Error("Image exporter is not loaded yet. Please refresh and try again.");
+  }
+
+  const canvas = await window.html2canvas(card, {
+    backgroundColor: "#fffdf9",
+    scale: 2,
+    useCORS: true,
+    logging: false
+  });
+
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      captureRoot.innerHTML = "";
+      if (!blob) {
+        reject(new Error("Failed to convert image."));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
+}
+
+function setButtonState(selector, disabled, textWhenBusy) {
+  const btn = document.querySelector(selector);
+  if (!btn) return;
+
+  if (disabled) {
+    btn.setAttribute("disabled", "true");
+    if (textWhenBusy) {
+      btn.dataset.prevText = btn.textContent;
+      btn.textContent = textWhenBusy;
+    }
+    return;
+  }
+
+  btn.removeAttribute("disabled");
+  if (btn.dataset.prevText) {
+    btn.textContent = btn.dataset.prevText;
+    delete btn.dataset.prevText;
+  }
+}
+
+async function downloadTimetableImage() {
+  if (!state.selectedCourses.size) {
+    window.alert("Select at least one course before exporting an image.");
+    return;
+  }
+
+  setButtonState("#download-image", true, "Preparing...");
+  try {
+    const blob = await getTimetableBlob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const safeName = toSafeFileSlug(state.shareName);
+    const fileName = safeName ? `iimk-timetable-${safeName}.png` : EXPORT_IMAGE_NAME;
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    window.alert(err.message || "Could not export the image.");
+  } finally {
+    setButtonState("#download-image", false);
+  }
+}
+
+async function shareTimetableImage() {
+  if (!state.selectedCourses.size) {
+    window.alert("Select at least one course before sharing an image.");
+    return;
+  }
+
+  setButtonState("#share-image", true, "Preparing...");
+  try {
+    const blob = await getTimetableBlob();
+    const safeName = toSafeFileSlug(state.shareName);
+    const fileName = safeName ? `iimk-timetable-${safeName}.png` : EXPORT_IMAGE_NAME;
+    const file = new File([blob], fileName, { type: "image/png" });
+
+    if (!navigator.share) {
+      await downloadBlob(blob, fileName);
+      await writeTextToClipboard(getShareIntroText()).catch(() => {});
+      window.alert("Native share is not available in this browser. The image was downloaded instead.");
+      return;
+    }
+
+    if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+      await downloadBlob(blob, fileName);
+      await writeTextToClipboard(getShareIntroText()).catch(() => {});
+      window.alert("This browser cannot share image files. The image was downloaded instead.");
+      return;
+    }
+
+    await navigator.share({
+      files: [file],
+      text: getShareIntroText(),
+      title: "IIMK Timetable"
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      return;
+    }
+    window.alert(err.message || "Could not share the timetable image.");
+  } finally {
+    setButtonState("#share-image", false);
+  }
 }
 
 function escapeHtml(text) {
@@ -283,7 +505,8 @@ function renderTimetable() {
 
   if (label) {
     const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
-    label.textContent = `Current week: ${fmt.format(weekRange.start)} - ${fmt.format(weekRange.end)}`;
+    state.weekLabelText = `Current week: ${fmt.format(weekRange.start)} - ${fmt.format(weekRange.end)}`;
+    label.textContent = state.weekLabelText;
   }
 
   if (!state.selectedCourses.size) {
@@ -348,6 +571,10 @@ function bindEvents() {
   const list = document.querySelector("#course-list");
   const clearBtn = document.querySelector("#clear-selection");
   const copyBtn = document.querySelector("#copy-link");
+  const copyShareTextBtn = document.querySelector("#copy-share-text");
+  const downloadImageBtn = document.querySelector("#download-image");
+  const shareImageBtn = document.querySelector("#share-image");
+  const shareNameInput = document.querySelector("#share-name");
 
   searchInput.addEventListener("input", (e) => {
     state.search = e.target.value || "";
@@ -378,6 +605,25 @@ function bindEvents() {
   if (copyBtn) {
     copyBtn.addEventListener("click", copyShareLink);
   }
+
+  if (copyShareTextBtn) {
+    copyShareTextBtn.addEventListener("click", copyCustomShareText);
+  }
+
+  if (downloadImageBtn) {
+    downloadImageBtn.addEventListener("click", downloadTimetableImage);
+  }
+
+  if (shareImageBtn) {
+    shareImageBtn.addEventListener("click", shareTimetableImage);
+  }
+
+  if (shareNameInput) {
+    shareNameInput.addEventListener("input", (e) => {
+      state.shareName = (e.target.value || "").trim();
+      writeSelectionToUrl();
+    });
+  }
 }
 
 async function init() {
@@ -399,6 +645,12 @@ async function init() {
     state.courseMap = buildCourseMap(data);
     state.courseIndexMap = buildCourseIndexMap(state.courseMap);
     state.selectedCourses = getSelectionFromUrl(state.courseMap, state.courseIndexMap);
+    state.shareName = getShareNameFromUrl();
+
+    const shareNameInput = document.querySelector("#share-name");
+    if (shareNameInput && state.shareName) {
+      shareNameInput.value = state.shareName;
+    }
 
     bindEvents();
     rerender();

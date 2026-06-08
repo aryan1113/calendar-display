@@ -9,11 +9,8 @@
       content="Build and share your IIMK weekly course timetable. Select courses, view your current week at a glance, and share the exact schedule with a link."
     />
 
-    <link rel="apple-touch-icon" sizes="180x180" href="./favicon_io/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="./favicon_io/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="./favicon_io/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./android-chrome-512x512.png" />
     <link rel="icon" href="./favicon.ico" sizes="any" />
-    <link rel="manifest" href="./favicon_io/site.webmanifest" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="IIMK Calendar Display" />
@@ -51,6 +48,7 @@
   </head>
   <body>
     <main class="app-shell">
+      <div id="capture-root" aria-hidden="true"></div>
       <header class="hero">
         <p class="eyebrow">IIMK Calendar Display</p>
         <h1>Build Your Course Timetable</h1>
@@ -82,6 +80,22 @@
             <h2>Selected Courses</h2>
             <p id="selected-count" class="helper-text">0 selected</p>
             <div id="selected-courses" class="selected-courses"></div>
+            <div class="share-panel" aria-label="Share options">
+              <label for="share-name">Your name for sharing</label>
+              <input
+                id="share-name"
+                type="text"
+                maxlength="60"
+                placeholder="Enter your name"
+                autocomplete="name"
+              />
+              <p class="helper-text">Used in share text: Checkout [Name]'s timetable from: link</p>
+              <div class="selected-actions">
+                <button id="copy-share-text" class="ghost-btn" type="button">Copy share text</button>
+                <button id="download-image" class="ghost-btn" type="button">Download image</button>
+                <button id="share-image" class="ghost-btn" type="button">Share image</button>
+              </div>
+            </div>
             <div class="selected-actions">
               <button id="clear-selection" class="ghost-btn" type="button">Clear selection</button>
               <button id="copy-link" class="ghost-btn" type="button">Copy share link</button>
@@ -155,6 +169,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
