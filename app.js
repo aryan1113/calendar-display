@@ -446,6 +446,60 @@ function fuzzySubsequenceScore(text, query) {
   return score;
 }
 
+function levenshteinDistance(a, b) {
+  const s = normalizeSearchText(a);
+  const t = normalizeSearchText(b);
+  const m = s.length;
+  const n = t.length;
+
+  if (!m) return n;
+  if (!n) return m;
+
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+
+  for (let j = 0; j <= n; j += 1) prev[j] = j;
+
+  for (let i = 1; i <= m; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j += 1) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    const tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+
+  return prev[n];
+}
+
+function typoFuzzyScore(text, query) {
+  const haystack = normalizeSearchText(text);
+  const needle = normalizeSearchText(query);
+
+  if (!needle) return 0;
+  if (!haystack) return Number.POSITIVE_INFINITY;
+
+  const hayTokens = haystack.split(" ").filter(Boolean);
+  const queryTokens = needle.split(" ").filter(Boolean);
+
+  // Compare each query token with the closest token in the field.
+  let tokenDistanceSum = 0;
+  for (const qTok of queryTokens) {
+    let best = Number.POSITIVE_INFINITY;
+    for (const hTok of hayTokens) {
+      const d = levenshteinDistance(qTok, hTok);
+      if (d < best) best = d;
+      if (best === 0) break;
+    }
+    tokenDistanceSum += best;
+  }
+
+  const wholeDistance = levenshteinDistance(needle, haystack);
+  return Math.min(tokenDistanceSum, wholeDistance);
+}
+
 function filterCourseEntries() {
   const q = normalizeSearchText(state.search);
   const entries = [...state.courseMap.values()];
@@ -461,10 +515,13 @@ function filterCourseEntries() {
     });
   }
 
-  const threshold = q.length <= 3 ? 1.8 : q.length <= 5 ? 3.2 : 5.2;
+  const subsequenceThreshold = q.length <= 3 ? 1.8 : q.length <= 5 ? 3.2 : 5.2;
+  const typoThreshold = q.length <= 4 ? 2 : q.length <= 8 ? 2 : 3;
   const ranked = [];
 
   for (const course of entries) {
+    const subjectText = normalizeSearchText(course.subject);
+    const facultyText = normalizeSearchText(course.faculty);
     const batchText = normalizeSearchText(course.batch);
     const sectionText = normalizeSearchText(course.section);
 
@@ -473,12 +530,21 @@ function filterCourseEntries() {
       continue;
     }
 
+    if ((subjectText && subjectText.includes(q)) || (facultyText && facultyText.includes(q))) {
+      ranked.push({ course, matchType: 1, score: 0 });
+      continue;
+    }
+
     const subjectScore = fuzzySubsequenceScore(course.subject, q);
     const facultyScore = fuzzySubsequenceScore(course.faculty, q);
-    const bestScore = Math.min(subjectScore, facultyScore);
+    const typoSubjectScore = typoFuzzyScore(course.subject, q);
+    const typoFacultyScore = typoFuzzyScore(course.faculty, q);
+    const bestSubsequenceScore = Math.min(subjectScore, facultyScore);
+    const bestTypoScore = Math.min(typoSubjectScore, typoFacultyScore);
 
-    if (bestScore <= threshold) {
-      ranked.push({ course, matchType: 1, score: bestScore });
+    if (bestTypoScore <= typoThreshold || bestSubsequenceScore <= subsequenceThreshold) {
+      // Prioritize typo distance first, then subsequence as a tiebreaker.
+      ranked.push({ course, matchType: 2, score: bestTypoScore + bestSubsequenceScore * 0.01 });
     }
   }
 
