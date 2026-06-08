@@ -377,6 +377,17 @@ function getSlotLabel(isoDateTime) {
   return m ? m[1] : null;
 }
 
+function isEventOnLocalDate(event, targetDate) {
+  const eventDate = parseIsoToLocalDate(event.start);
+  if (!eventDate || !targetDate) return false;
+
+  return (
+    eventDate.getFullYear() === targetDate.getFullYear() &&
+    eventDate.getMonth() === targetDate.getMonth() &&
+    eventDate.getDate() === targetDate.getDate()
+  );
+}
+
 function buildCourseMap(events) {
   const map = new Map();
 
@@ -521,9 +532,30 @@ function renderSelectedCourses() {
 function buildTimetableData() {
   const selected = state.selectedCourses;
   const weekRange = getCurrentWeekRange();
-  const selectedEvents = state.events.filter(
-    (event) => selected.has(normalizeCourseKey(event)) && isEventInCurrentWeek(event, weekRange)
-  );
+  const selectedCourseEvents = state.events.filter((event) => selected.has(normalizeCourseKey(event)));
+
+  const currentWeekEvents = selectedCourseEvents.filter((event) => isEventInCurrentWeek(event, weekRange));
+
+  const nextMonday = new Date(weekRange.start);
+  nextMonday.setDate(nextMonday.getDate() + 7);
+
+  const nextMondayEvents = selectedCourseEvents.filter((event) => isEventOnLocalDate(event, nextMonday));
+
+  const hasNextMondayPreview = nextMondayEvents.length > 0;
+  const previewRowKey = "__NEXT_MONDAY__";
+  const rows = DAYS.map((day) => ({ key: day, label: day }));
+
+  if (hasNextMondayPreview) {
+    const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
+    rows.push({
+      key: previewRowKey,
+      label: `Monday (next week: ${fmt.format(nextMonday)})`
+    });
+  }
+
+  const selectedEvents = hasNextMondayPreview
+    ? [...currentWeekEvents, ...nextMondayEvents]
+    : currentWeekEvents;
 
   const slots = Array.from(
     new Set(
@@ -534,14 +566,14 @@ function buildTimetableData() {
   ).sort();
 
   const grid = {};
-  for (const day of DAYS) {
-    grid[day] = {};
+  for (const row of rows) {
+    grid[row.key] = {};
     for (const slot of slots) {
-      grid[day][slot] = [];
+      grid[row.key][slot] = [];
     }
   }
 
-  for (const event of selectedEvents) {
+  for (const event of currentWeekEvents) {
     const day = getWeekdayName(event.start);
     const slot = getSlotLabel(event.start);
     if (!day || !slot || !grid[day] || !grid[day][slot]) continue;
@@ -562,9 +594,33 @@ function buildTimetableData() {
     }
   }
 
-  for (const day of DAYS) {
+  if (hasNextMondayPreview) {
+    for (const event of nextMondayEvents) {
+      const slot = getSlotLabel(event.start);
+      if (!slot || !grid[previewRowKey] || !grid[previewRowKey][slot]) continue;
+
+      const entry = {
+        subject: event.subject || "Untitled",
+        batch: event.batch || "",
+        location: normalizeLocation(event.location),
+        section: event.section || ""
+      };
+
+      const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
+      const seen = new Set(
+        grid[previewRowKey][slot].map(
+          (item) => `${item.subject}||${item.batch}||${item.location}||${item.section}`
+        )
+      );
+      if (!seen.has(dedupeKey)) {
+        grid[previewRowKey][slot].push(entry);
+      }
+    }
+  }
+
+  for (const row of rows) {
     for (const slot of slots) {
-      grid[day][slot].sort((a, b) => {
+      grid[row.key][slot].sort((a, b) => {
         const aKey = `${a.subject} ${a.batch} ${a.location}`;
         const bKey = `${b.subject} ${b.batch} ${b.location}`;
         return aKey.localeCompare(bKey);
@@ -572,17 +628,20 @@ function buildTimetableData() {
     }
   }
 
-  return { slots, grid, weekRange };
+  return { slots, grid, weekRange, rows, hasNextMondayPreview };
 }
 
 function renderTimetable() {
   const table = document.querySelector("#timetable");
-  const { slots, grid, weekRange } = buildTimetableData();
+  const { slots, grid, weekRange, rows, hasNextMondayPreview } = buildTimetableData();
   const label = document.querySelector("#week-label");
 
   if (label) {
     const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
     state.weekLabelText = `Current week: ${fmt.format(weekRange.start)} - ${fmt.format(weekRange.end)}`;
+    if (hasNextMondayPreview) {
+      state.weekLabelText += " + next Monday preview";
+    }
     label.textContent = state.weekLabelText;
   }
 
@@ -613,10 +672,10 @@ function renderTimetable() {
     </thead>
   `;
 
-  const bodyRows = DAYS.map((day) => {
+  const bodyRows = rows.map((row) => {
     const cols = slots
       .map((slot) => {
-        const entries = grid[day][slot] || [];
+        const entries = grid[row.key][slot] || [];
         if (!entries.length) return "<td></td>";
 
         const content = entries
@@ -632,7 +691,7 @@ function renderTimetable() {
       })
       .join("");
 
-    return `<tr><th>${day}</th>${cols}</tr>`;
+    return `<tr><th>${escapeHtml(row.label)}</th>${cols}</tr>`;
   }).join("");
 
   table.innerHTML = `${head}<tbody>${bodyRows}</tbody>`;
