@@ -66,6 +66,26 @@ From repo root:
 node scripts/generate-raw-data.js
 ```
 
+Default behavior is overwrite mode: [data/raw-events.json](data/raw-events.json) is fully replaced.
+
+Append mode (keeps existing rows and adds newly parsed rows):
+
+```bash
+node scripts/generate-raw-data.js --append
+```
+
+Parse only a subset of ICS files:
+
+```bash
+node scripts/generate-raw-data.js --files normal.ics,normal_2.ics
+```
+
+You can also pass specific files as positional args:
+
+```bash
+node scripts/generate-raw-data.js normal.ics normal_3.ics
+```
+
 Expected output:
 - event count parsed
 - generated file path for [data/raw-events.json](data/raw-events.json)

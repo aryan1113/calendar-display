@@ -127,17 +127,112 @@ if (typeof module !== "undefined" && typeof require !== "undefined") {
     const dataDir = path.join(repoRoot, "data");
     const outFile = path.join(dataDir, "raw-events.json");
 
-    const icsFiles = fs
-      .readdirSync(dataDir)
-      .filter((name) => name.toLowerCase().endsWith(".ics"))
-      .map((name) => path.join(dataDir, name));
+    const args = process.argv.slice(2);
+    const usage = [
+      "Usage:",
+      "  node scripts/generate-raw-data.js [--append] [--files file1.ics,file2.ics] [file3.ics ...]",
+      "",
+      "Options:",
+      "  --append               Append parsed events to existing data/raw-events.json",
+      "  --files <list>         Comma-separated .ics file names or paths",
+      "  --help                 Show this message"
+    ].join("\n");
+
+    const options = {
+      append: false,
+      requestedFiles: []
+    };
+
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i];
+
+      if (arg === "--help" || arg === "-h") {
+        console.log(usage);
+        process.exit(0);
+      }
+
+      if (arg === "--append") {
+        options.append = true;
+        continue;
+      }
+
+      if (arg === "--files") {
+        const next = args[i + 1];
+        if (!next || next.startsWith("--")) {
+          console.error("Missing value for --files");
+          console.error(usage);
+          process.exit(1);
+        }
+
+        const requested = next
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean);
+
+        options.requestedFiles.push(...requested);
+        i += 1;
+        continue;
+      }
+
+      if (arg.startsWith("--")) {
+        console.error(`Unknown option: ${arg}`);
+        console.error(usage);
+        process.exit(1);
+      }
+
+      options.requestedFiles.push(arg);
+    }
+
+    const resolveIcsPath = (nameOrPath) => {
+      const candidate = path.isAbsolute(nameOrPath)
+        ? nameOrPath
+        : path.join(dataDir, nameOrPath);
+      return path.normalize(candidate);
+    };
+
+    const icsFiles =
+      options.requestedFiles.length > 0
+        ? options.requestedFiles.map(resolveIcsPath)
+        : fs
+            .readdirSync(dataDir)
+            .filter((name) => name.toLowerCase().endsWith(".ics"))
+            .map((name) => path.join(dataDir, name));
+
+    if (icsFiles.length === 0) {
+      console.error("No ICS files found to parse.");
+      process.exit(1);
+    }
+
+    const missingOrInvalid = icsFiles.filter(
+      (file) => !file.toLowerCase().endsWith(".ics") || !fs.existsSync(file)
+    );
+
+    if (missingOrInvalid.length > 0) {
+      console.error("Invalid or missing ICS files:");
+      missingOrInvalid.forEach((file) => console.error(`- ${file}`));
+      process.exit(1);
+    }
 
     const raws = icsFiles.map((file) => fs.readFileSync(file, "utf8"));
-    const merged = parseIcsToNormalizedEvents(raws);
+    const parsed = parseIcsToNormalizedEvents(raws);
 
-    fs.writeFileSync(outFile, JSON.stringify(merged, null, 2), "utf8");
+    let outputEvents = parsed;
+    if (options.append && fs.existsSync(outFile)) {
+      const existingRaw = fs.readFileSync(outFile, "utf8");
+      const existing = JSON.parse(existingRaw);
+      if (!Array.isArray(existing)) {
+        console.error("Existing raw-events.json is not an array. Cannot append.");
+        process.exit(1);
+      }
+      outputEvents = existing.concat(parsed);
+    }
 
-    console.log(`Parsed ${merged.length} events from ${icsFiles.length} ICS files.`);
+    fs.writeFileSync(outFile, JSON.stringify(outputEvents, null, 2), "utf8");
+
+    console.log(
+      `Parsed ${parsed.length} events from ${icsFiles.length} ICS files (${options.append ? "append" : "overwrite"} mode).`
+    );
+    console.log(`Output contains ${outputEvents.length} events.`);
     console.log(`Wrote ${outFile}`);
   }
 }
