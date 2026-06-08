@@ -42,7 +42,6 @@ body {
 }
 
 .hero,
-.about-panel,
 .picker-panel,
 .table-panel {
   background: var(--surface);
@@ -53,10 +52,6 @@ body {
 
 .hero {
   padding: 1.6rem;
-}
-
-.about-panel {
-  padding: 1.1rem 1.3rem;
 }
 
 .eyebrow {
@@ -224,6 +219,51 @@ h2 {
   max-width: 100%;
 }
 
+.about-footnote {
+  border: 1px dashed #ccbda8;
+  border-radius: 12px;
+  background: rgba(255, 249, 240, 0.55);
+  padding: 0.6rem 0.8rem;
+}
+
+.about-footnote details {
+  color: var(--ink-muted);
+}
+
+.about-footnote summary {
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #5c5143;
+  list-style-position: outside;
+}
+
+.about-content {
+  margin-top: 0.7rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.about-content h3 {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.9rem;
+  font-family: "Space Grotesk", sans-serif;
+  color: #524737;
+}
+
+.about-content p {
+  margin: 0.3rem 0;
+}
+
+.about-content ol {
+  margin: 0.25rem 0 0.55rem;
+  padding-left: 1.05rem;
+}
+
+.about-content a {
+  color: #2d6757;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -282,7 +322,6 @@ td.filled {
 
 @media (max-width: 600px) {
   .hero,
-  .about-panel,
   .picker-panel,
   .table-panel {
     border-radius: 14px;
@@ -292,12 +331,15 @@ td.filled {
     padding: 1.1rem;
   }
 
-  .about-panel,
   .picker-panel,
   .table-panel,
   .list-pane,
   .selected-pane {
     padding: 0.85rem;
+  }
+
+  .about-footnote {
+    padding: 0.55rem 0.7rem;
   }
 
   h1 {

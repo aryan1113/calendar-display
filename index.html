@@ -60,15 +60,6 @@
         </p>
       </header>
 
-      <section class="about-panel" aria-label="About this app">
-        <h2>About</h2>
-        <p class="subtitle">
-          This is a lightweight timetable builder for IIMK schedules. Select up to your preferred
-          courses, view only the current week, and share your exact selection using a short URL.
-          No login is required.
-        </p>
-      </section>
-
       <section class="picker-panel" aria-label="Course picker">
         <div class="search-wrap">
           <label for="course-search">Search courses</label>
@@ -108,6 +99,59 @@
         <div class="table-wrap">
           <table id="timetable"></table>
         </div>
+      </section>
+
+      <section class="about-footnote" aria-label="Project motivation and acknowledgements">
+        <details>
+          <summary>About this project (for curious users)</summary>
+          <div class="about-content">
+            <p>
+              Motivation: this page started as a practical way to quickly build and share a clean
+              weekly timetable URL without account setup.
+            </p>
+
+            <p>
+              Data source acknowledgement:
+              <a href="https://schedule-appkp.netlify.app/home" target="_blank" rel="noopener noreferrer"
+                >schedule-appkp.netlify.app</a
+              >
+            </p>
+
+            <h3>What felt difficult in that source app</h3>
+            <ol>
+              <li>Courses were effectively limited to one subsection at a time.</li>
+              <li>Batch-selection controls felt too small and easy to miss.</li>
+              <li>Selection flow required checking small controls instead of selecting the full row.</li>
+              <li>Timetable interaction felt less intuitive because day updates needed extra scrolling.</li>
+              <li>Term timetable view felt redundant when course-time-venue metadata was stable across weeks.</li>
+              <li>No straightforward way to share a timetable directly through URL state.</li>
+              <li>Export to ICS then import into a calendar app felt cumbersome.</li>
+            </ol>
+
+            <h3>Alternative discovered later</h3>
+            <p>
+              <a href="https://iimk-pgp-sched.duckdns.org/" target="_blank" rel="noopener noreferrer"
+                >iimk-pgp-sched.duckdns.org</a
+              >
+              improves on both this project and the Netlify one in several ways:
+            </p>
+            <ol>
+              <li>Supports direct PDF upload by users.</li>
+              <li>Groups courses by area (LSM, Finance, DSOM, and others).</li>
+              <li>Supports installable web-app flow for notifications.</li>
+              <li>Has a subscription model for cancelled class, reschedule, room change, and morning summary alerts.</li>
+            </ol>
+
+            <h3>Common ground</h3>
+            <ol>
+              <li>Both approaches support editing a course-link style selection.</li>
+              <li>
+                Both support URL-based sharing, but this project encodes selected courses directly in the URL,
+                while the DuckDNS app uses a unique session identifier.
+              </li>
+            </ol>
+          </div>
+        </details>
       </section>
     </main>
 
