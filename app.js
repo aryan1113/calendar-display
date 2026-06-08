@@ -355,6 +355,13 @@ function normalizeCourseKey(event) {
   return batch ? `${subject} [Batch ${batch}]` : subject;
 }
 
+function normalizeLocation(location) {
+  const raw = String(location || "").trim();
+  if (!raw) return "";
+
+  return raw.replace(/\s*,\s*iim\s*kozhikode\s*$/i, "").trim();
+}
+
 function getWeekdayName(isoDateTime) {
   if (!isoDateTime) return null;
   // Parse as local date parts to avoid timezone shifting in the browser.
@@ -391,18 +398,85 @@ function buildCourseMap(events) {
   return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function fuzzySubsequenceScore(text, query) {
+  const haystack = normalizeSearchText(text);
+  const needle = normalizeSearchText(query);
+
+  if (!needle) return 0;
+  if (!haystack) return Number.POSITIVE_INFINITY;
+
+  let score = 0;
+  let lastPos = -1;
+
+  for (const ch of needle) {
+    const pos = haystack.indexOf(ch, lastPos + 1);
+    if (pos === -1) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    if (lastPos === -1) {
+      score += pos;
+    } else {
+      score += pos - lastPos - 1;
+    }
+
+    lastPos = pos;
+  }
+
+  // Prefer tighter matches and slightly favor shorter text fields.
+  score += Math.max(0, haystack.length - needle.length) * 0.02;
+  return score;
+}
+
 function filterCourseEntries() {
-  const q = state.search.trim().toLowerCase();
+  const q = normalizeSearchText(state.search);
   const entries = [...state.courseMap.values()];
 
   if (!q) return entries;
 
-  return entries.filter((course) => {
-    const hay = [course.subject, course.batch, course.faculty, course.section, course.key]
-      .join(" ")
-      .toLowerCase();
-    return hay.includes(q);
-  });
+  if (q.length === 1) {
+    return entries.filter((course) => {
+      const hay = [course.subject, course.batch, course.faculty, course.section, course.key]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  const threshold = q.length <= 3 ? 1.8 : q.length <= 5 ? 3.2 : 5.2;
+  const ranked = [];
+
+  for (const course of entries) {
+    const batchText = normalizeSearchText(course.batch);
+    const sectionText = normalizeSearchText(course.section);
+
+    if ((batchText && batchText.includes(q)) || (sectionText && sectionText.includes(q))) {
+      ranked.push({ course, matchType: 0, score: 0 });
+      continue;
+    }
+
+    const subjectScore = fuzzySubsequenceScore(course.subject, q);
+    const facultyScore = fuzzySubsequenceScore(course.faculty, q);
+    const bestScore = Math.min(subjectScore, facultyScore);
+
+    if (bestScore <= threshold) {
+      ranked.push({ course, matchType: 1, score: bestScore });
+    }
+  }
+
+  ranked.sort(
+    (a, b) =>
+      a.matchType - b.matchType || a.score - b.score || a.course.key.localeCompare(b.course.key)
+  );
+
+  return ranked.map((item) => item.course);
 }
 
 function renderCourseList() {
@@ -474,12 +548,15 @@ function buildTimetableData() {
 
     const entry = {
       subject: event.subject || "Untitled",
-      location: event.location || "",
+      batch: event.batch || "",
+      location: normalizeLocation(event.location),
       section: event.section || ""
     };
 
-    const dedupeKey = `${entry.subject}||${entry.location}||${entry.section}`;
-    const seen = new Set(grid[day][slot].map((item) => `${item.subject}||${item.location}||${item.section}`));
+    const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
+    const seen = new Set(
+      grid[day][slot].map((item) => `${item.subject}||${item.batch}||${item.location}||${item.section}`)
+    );
     if (!seen.has(dedupeKey)) {
       grid[day][slot].push(entry);
     }
@@ -488,8 +565,8 @@ function buildTimetableData() {
   for (const day of DAYS) {
     for (const slot of slots) {
       grid[day][slot].sort((a, b) => {
-        const aKey = `${a.subject} ${a.location}`;
-        const bKey = `${b.subject} ${b.location}`;
+        const aKey = `${a.subject} ${a.batch} ${a.location}`;
+        const bKey = `${b.subject} ${b.batch} ${b.location}`;
         return aKey.localeCompare(bKey);
       });
     }
@@ -545,7 +622,9 @@ function renderTimetable() {
         const content = entries
           .map(
             (entry) =>
-              `<span class=\"slot-title\">${escapeHtml(entry.subject)}</span><span class=\"slot-venue\">${escapeHtml(entry.location || "Venue TBA")}</span>`
+              `<span class=\"slot-title\">${escapeHtml(entry.subject)}${
+                entry.batch ? ` (Batch ${escapeHtml(entry.batch)})` : ""
+              }</span><span class=\"slot-venue\">${escapeHtml(entry.location || "Venue TBA")}</span>`
           )
           .join("<hr>");
 
