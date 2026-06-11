@@ -352,6 +352,44 @@ th {
   font-size: 0.9rem;
 }
 
+tbody tr.row-today th,
+tbody tr.row-today td {
+  background: #e9f7f2;
+}
+
+tbody tr.row-preview th,
+tbody tr.row-preview td {
+  background: #faf6ef;
+}
+
+tbody tr.row-today td.filled {
+  background: #dff1ea;
+}
+
+tbody tr.row-preview td.filled {
+  background: #f4edde;
+}
+
+.day-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #124b3d;
+  border: 1px solid #88c5b5;
+  background: #d2efe7;
+}
+
+.day-pill-preview {
+  color: #6f6151;
+  border-color: #d8ccb9;
+  background: #f2eadf;
+}
+
 td {
   font-size: 0.88rem;
   min-width: 128px;
@@ -424,6 +462,11 @@ td.filled {
   td,
   th {
     font-size: 0.84rem;
+  }
+
+  .day-pill {
+    margin-left: 0.3rem;
+    font-size: 0.68rem;
   }
 
   .search-wrap input {

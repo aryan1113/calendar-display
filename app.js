@@ -701,6 +701,9 @@ function renderTimetable() {
   const table = document.querySelector("#timetable");
   const { slots, grid, weekRange, rows, hasNextMondayPreview } = buildTimetableData();
   const label = document.querySelector("#week-label");
+  const now = new Date();
+  const todayKey = DAYS[now.getDay() === 0 ? 6 : now.getDay() - 1];
+  const previewRowKey = "__NEXT_MONDAY__";
 
   if (label) {
     const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
@@ -739,6 +742,16 @@ function renderTimetable() {
   `;
 
   const bodyRows = rows.map((row) => {
+    const isToday = row.key === todayKey;
+    const isPreview = row.key === previewRowKey;
+    const rowClass = [isToday ? "row-today" : "", isPreview ? "row-preview" : ""]
+      .filter(Boolean)
+      .join(" ");
+
+    const rowLabel = `${escapeHtml(row.label)}${
+      isToday ? '<span class="day-pill">Today</span>' : ""
+    }${isPreview ? '<span class="day-pill day-pill-preview">Next week</span>' : ""}`;
+
     const cols = slots
       .map((slot) => {
         const entries = grid[row.key][slot] || [];
@@ -757,7 +770,7 @@ function renderTimetable() {
       })
       .join("");
 
-    return `<tr><th>${escapeHtml(row.label)}</th>${cols}</tr>`;
+    return `<tr class="${rowClass}"><th>${rowLabel}</th>${cols}</tr>`;
   }).join("");
 
   table.innerHTML = `${head}<tbody>${bodyRows}</tbody>`;
