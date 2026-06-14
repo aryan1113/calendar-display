@@ -1,6 +1,6 @@
 # Calendar Display
 
-Static, client-side timetable web app for IIMK course schedules, can be extended for literally evertthing
+Static, client-side timetable web app for IIMK course schedules.
 
 It parses raw ICS calendars into normalized JSON and renders a weekly timetable where:
 - rows are days
@@ -10,8 +10,8 @@ It parses raw ICS calendars into normalized JSON and renders a weekly timetable 
 
 ## What This Repo Does
 
-1. Stores raw source calendars in ICS format in [data](data).
-2. Converts one or more ICS files into a single normalized JSON dataset.
+1. Stores raw source calendars in XLSX and optionally ICS format.
+2. Converts one source workbook or one or more ICS files into a single normalized JSON dataset.
 3. Provides a static web app for course selection and timetable rendering.
 4. Filters timetable to only the current week (Monday-Sunday) using local browser time.
 5. Supports shareable timetable selection through URL query params (no account needed).
@@ -22,7 +22,8 @@ It parses raw ICS calendars into normalized JSON and renders a weekly timetable 
 - [styles.css](styles.css): app styling
 - [app.js](app.js): browser logic (course selection, URL state, weekly table)
 - [scripts/generate-raw-data.js](scripts/generate-raw-data.js): ICS to JSON generator script
-- [data](data): raw ICS files + generated JSON
+- [scripts/generate-raw-data-xlsx.py](scripts/generate-raw-data-xlsx.py): XLSX to JSON generator script
+- [data](data): raw source files + generated JSON
 - [data/raw-events.json](data/raw-events.json): normalized merged event data used by the app
 
 ## Data Schema
@@ -38,9 +39,43 @@ Generated JSON uses this shape per event:
 	"end": "2026-06-09T15:45:00",
 	"location": "Section D1, IIM Kozhikode",
 	"faculty": "Prof. Anirban Ghatak",
-	"section": "D1"
+	"section": "D1",
+	"programme": "PGP 29",
+	"abbreviation": "GT",
+	"credit": "3.0"
 }
 ```
+
+The app only requires the original fields (`id`, `subject`, `batch`, `start`, `end`, `location`, `faculty`, `section`).
+The extra workbook-derived metadata is preserved for future tooling.
+
+## XLSX Parsing Workflow
+
+Implemented in [scripts/generate-raw-data-xlsx.py](scripts/generate-raw-data-xlsx.py):
+
+- reads the timetable workbook directly from `.xlsx`
+- resolves merged-cell values by propagating each merged range's top-left cell
+- builds an in-memory course catalog from the `Course Details` sheet
+- parses the `Term IV Schedule` sheet by section column and time slot row
+- expands timetable abbreviations into full course metadata
+- filters out non-course schedule rows like registration, lunch, meetings, and exam banners
+- writes [data/raw-events.json](data/raw-events.json)
+
+### Generate JSON From XLSX
+
+From repo root:
+
+```bash
+python3 scripts/generate-raw-data-xlsx.py
+```
+
+Optional arguments:
+
+```bash
+python3 scripts/generate-raw-data-xlsx.py --xlsx "PGP-29 Term IV Schedule.xlsx" --out data/raw-events.json
+```
+
+This is the recommended workflow when the workbook is the source of truth.
 
 ## How ICS Parsing Works
 
@@ -89,6 +124,8 @@ node scripts/generate-raw-data.js normal.ics normal_3.ics
 Expected output:
 - event count parsed
 - generated file path for [data/raw-events.json](data/raw-events.json)
+
+Use the ICS generator when your source data arrives as calendar exports rather than the master workbook.
 
 ## Run Locally
 
@@ -180,8 +217,13 @@ GitHub Pages serves [index.html](index.html) and the app fetches [data/raw-event
 
 When schedules change:
 
-1. Replace/add ICS files in [data](data).
-2. Run:
+1. If the workbook is authoritative, replace the `.xlsx` file in the repo root and run:
+
+```bash
+python3 scripts/generate-raw-data-xlsx.py
+```
+
+2. If the source data arrives as ICS files instead, replace/add them in [data](data) and run:
 
 ```bash
 node scripts/generate-raw-data.js
