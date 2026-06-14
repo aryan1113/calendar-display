@@ -43,7 +43,10 @@ body {
 
 .hero,
 .picker-panel,
-.table-panel {
+.table-panel,
+.updates-panel,
+.admin-panel,
+.audit-panel {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -87,6 +90,108 @@ h2 {
 .picker-panel,
 .table-panel {
   padding: 1.1rem;
+}
+
+.updates-panel,
+.admin-panel,
+.audit-panel {
+  padding: 1rem;
+}
+
+.updates-head,
+.admin-head {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.active-updates,
+.audit-log {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.update-item,
+.audit-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.65rem;
+}
+
+.update-item h3,
+.audit-item h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.update-meta,
+.audit-meta {
+  margin: 0.25rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.84rem;
+}
+
+.admin-auth-block {
+  border: 1px dashed #cdb89b;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+}
+
+.admin-auth-row input,
+.admin-update-form input,
+.admin-update-form select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.62rem 0.75rem;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+.admin-auth-row input:focus,
+.admin-update-form input:focus,
+.admin-update-form select:focus {
+  outline: 2px solid #99d6c6;
+  border-color: var(--accent);
+}
+
+.admin-update-form {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.7rem;
+}
+
+.admin-form-grid label {
+  font-size: 0.88rem;
+  color: #5f5448;
+  font-weight: 600;
+}
+
+.pill-type {
+  display: inline-flex;
+  border: 1px solid #95cdbf;
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.74rem;
+  margin-left: 0.45rem;
+  color: #124b3d;
+  background: #d2efe7;
 }
 
 .search-wrap {
@@ -411,6 +516,57 @@ td.filled {
   margin-top: 0.25rem;
 }
 
+.slot-cancelled {
+  text-decoration: line-through;
+  color: var(--ink-muted);
+}
+
+.slot-cancelled-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #b44f2e;
+  background: #fde8e2;
+  border: 1px solid #f5c4b5;
+  border-radius: 999px;
+  padding: 0.06rem 0.45rem;
+  margin: 0.2rem 0 0.15rem;
+}
+
+.cell-all-cancelled {
+  background: #fff5f2 !important;
+}
+
+.passcode-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.passcode-wrap input {
+  width: 100%;
+  padding-right: 2.4rem;
+}
+
+.passcode-eye {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--ink-muted);
+}
+
+.passcode-eye:hover {
+  color: var(--ink);
+}
+
 @media (max-width: 900px) {
   .picker-grid {
     grid-template-columns: 1fr;
@@ -429,7 +585,10 @@ td.filled {
 @media (max-width: 600px) {
   .hero,
   .picker-panel,
-  .table-panel {
+  .table-panel,
+  .updates-panel,
+  .admin-panel,
+  .audit-panel {
     border-radius: 14px;
   }
 
@@ -439,9 +598,20 @@ td.filled {
 
   .picker-panel,
   .table-panel,
+  .updates-panel,
+  .admin-panel,
+  .audit-panel,
   .list-pane,
   .selected-pane {
     padding: 0.85rem;
+  }
+
+  .admin-auth-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
   }
 
   .about-footnote {

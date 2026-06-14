@@ -1,4 +1,12 @@
 const DATA_URL = "./data/raw-events.json";
+// --- Supabase config ---
+// Fill in your Project URL and anon key from Supabase Settings > API.
+// These values are safe to commit; they are public by design.
+const SUPABASE_URL = "https://xdudwozkvxcttadtuksg.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_syX5In3Y1M3ZFwJdbCIaXA__mt5-WP_";
+const FN_BASE = `${SUPABASE_URL}/functions/v1`;
+
+const SESSION_STORAGE_KEY = "calendar-display-admin-session-v1";
 
 const DAYS = [
   "Monday",
@@ -11,13 +19,17 @@ const DAYS = [
 ];
 
 const state = {
+  baseEvents: [],
   events: [],
   courseMap: new Map(),
   courseIndexMap: new Map(),
   selectedCourses: new Set(),
   search: "",
   shareName: "",
-  weekLabelText: "Current week"
+  weekLabelText: "Current week",
+  updates: [],
+  auditLog: [],
+  adminSession: null
 };
 
 const EXPORT_IMAGE_NAME = "iimk-timetable.png";
@@ -42,6 +54,109 @@ function parseIsoToLocalDate(isoDateTime) {
     Number(m[5]),
     Number(m[6])
   );
+}
+
+function parseYmdToLocalDate(ymd) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+}
+
+function toYmd(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function toIsoWithTimeFromYmd(ymd, hhmmss) {
+  return `${ymd}T${hhmmss}`;
+}
+
+function dateOnlyFromIso(isoDateTime) {
+  const m = String(isoDateTime || "").match(/^(\d{4}-\d{2}-\d{2})T/);
+  return m ? m[1] : null;
+}
+
+function timeOnlyFromIso(isoDateTime) {
+  const m = String(isoDateTime || "").match(/^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})$/);
+  return m ? m[1] : null;
+}
+
+function getSessionJson(key, fallback) {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed == null ? fallback : parsed;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function setSessionJson(key, value) {
+  window.sessionStorage.setItem(key, JSON.stringify(value));
+}
+
+function removeSessionKey(key) {
+  window.sessionStorage.removeItem(key);
+}
+
+async function callFunction(name, body) {
+  const res = await fetch(`${FN_BASE}/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `Function ${name} failed (${res.status})`);
+  }
+  return data;
+}
+
+function mapUpdateFromApi(row) {
+  return {
+    id: row.id,
+    courseKey: row.course_key,
+    updateType: row.update_type,
+    effectiveMode: row.effective_mode,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    newVenue: row.new_venue ?? "",
+    newStartTime: row.new_start_time ? String(row.new_start_time).slice(0, 5) : "",
+    newEndTime: row.new_end_time ? String(row.new_end_time).slice(0, 5) : "",
+    reason: row.reason ?? "",
+    adminId: row.admin_id,
+    createdAt: row.created_at,
+    isDeleted: row.is_deleted ?? false
+  };
+}
+
+function mapAuditFromApi(row) {
+  return {
+    id: row.id,
+    timestamp: row.action_ts,
+    adminId: row.admin_id,
+    courseKey: row.course_key,
+    updateType: row.update_type,
+    startDate: row.start_date ?? "-",
+    endDate: row.end_date ?? "-",
+    prevState: row.prev_state ?? "",
+    newState: row.new_state ?? "",
+    reason: row.reason ?? ""
+  };
+}
+
+function formatUpdateType(type) {
+  if (type === "cancellation") return "Cancellation";
+  if (type === "venue_change") return "Venue Change";
+  if (type === "time_change") return "Time Change";
+  return "Update";
 }
 
 function getCurrentWeekRange() {
@@ -409,6 +524,238 @@ function buildCourseMap(events) {
   return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
+function updateAffectsEvent(update, event) {
+  if (!update || !event) return false;
+  if (normalizeCourseKey(event) !== update.courseKey) return false;
+
+  const eventDateYmd = dateOnlyFromIso(event.start);
+  if (!eventDateYmd) return false;
+  return eventDateYmd >= update.startDate && eventDateYmd <= update.endDate;
+}
+
+function applyUpdatesToEvents(baseEvents, updates) {
+  const sortedUpdates = [...updates].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  let working = baseEvents.map((event) => ({ ...event }));
+
+  for (const update of sortedUpdates) {
+    if (!update || update.isDeleted) continue;
+
+    working = working
+      .map((event) => {
+        if (!updateAffectsEvent(update, event)) {
+          return event;
+        }
+
+        if (update.updateType === "cancellation") {
+          return { ...event, __cancelledBy: update.id };
+        }
+
+        if (update.updateType === "venue_change") {
+          return {
+            ...event,
+            location: update.newVenue || event.location,
+            __changedBy: update.id
+          };
+        }
+
+        if (update.updateType === "time_change") {
+          const eventDate = dateOnlyFromIso(event.start);
+          if (!eventDate) return event;
+
+          const nextStart = toIsoWithTimeFromYmd(eventDate, `${update.newStartTime}:00`);
+          const nextEnd = toIsoWithTimeFromYmd(eventDate, `${update.newEndTime}:00`);
+
+          return {
+            ...event,
+            start: nextStart,
+            end: nextEnd,
+            __changedBy: update.id
+          };
+        }
+
+        return event;
+      })
+  }
+
+  return working;
+}
+
+function loadAdminSession() {
+  const saved = getSessionJson(SESSION_STORAGE_KEY, null);
+  state.adminSession = saved && saved.adminId && saved.token ? saved : null;
+}
+
+function saveAdminSession() {
+  if (state.adminSession) {
+    setSessionJson(SESSION_STORAGE_KEY, state.adminSession);
+  } else {
+    removeSessionKey(SESSION_STORAGE_KEY);
+  }
+}
+
+async function fetchPublicData() {
+  try {
+    const data = await callFunction("get-public-data", {});
+    state.updates = (data.updates ?? []).map(mapUpdateFromApi);
+    state.auditLog = (data.auditLog ?? []).map(mapAuditFromApi);
+  } catch (_) {
+    // Non-fatal: fall back to empty; timetable still renders from base events.
+    state.updates = [];
+    state.auditLog = [];
+  }
+}
+
+function buildAdminSummary(update, affectedEventsBefore) {
+  const total = affectedEventsBefore.length;
+  const oldVenueSet = new Set(affectedEventsBefore.map((v) => normalizeLocation(v.location || "")).filter(Boolean));
+  const oldTimeSet = new Set(affectedEventsBefore.map((v) => `${getSlotLabel(v.start)}-${getSlotLabel(v.end)}`));
+
+  if (update.updateType === "cancellation") {
+    return {
+      prevState: `${total} classes scheduled`,
+      newState: `${total} classes cancelled`
+    };
+  }
+
+  if (update.updateType === "venue_change") {
+    const prevVenue = [...oldVenueSet].join(" | ") || "Venue TBA";
+    return {
+      prevState: `Venue: ${prevVenue}`,
+      newState: `Venue: ${update.newVenue}`
+    };
+  }
+
+  if (update.updateType === "time_change") {
+    const prevTime = [...oldTimeSet].join(" | ");
+    return {
+      prevState: `Time: ${prevTime || "Unknown"}`,
+      newState: `Time: ${update.newStartTime}-${update.newEndTime}`
+    };
+  }
+
+  return { prevState: "Updated", newState: "Updated" };
+}
+
+function renderActiveUpdates() {
+  const box = document.querySelector("#active-updates");
+  if (!box) return;
+
+  const updates = [...state.updates]
+    .filter((item) => !item.isDeleted)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  if (!updates.length) {
+    box.innerHTML = '<div class="update-item"><p class="helper-text">No active updates right now.</p></div>';
+    return;
+  }
+
+  box.innerHTML = updates
+    .map((item) => {
+      const dateLabel = item.startDate === item.endDate ? item.startDate : `${item.startDate} to ${item.endDate}`;
+      const note = item.reason ? `<p class="update-meta">Reason: ${escapeHtml(item.reason)}</p>` : "";
+      return `
+        <article class="update-item">
+          <h3>${escapeHtml(item.courseKey)} <span class="pill-type">${escapeHtml(formatUpdateType(item.updateType))}</span></h3>
+          <p class="update-meta">Effective: ${escapeHtml(dateLabel)} | Updated by ${escapeHtml(item.adminId)}</p>
+          ${note}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderAuditLog() {
+  const box = document.querySelector("#audit-log");
+  if (!box) return;
+
+  const logs = [...state.auditLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  if (!logs.length) {
+    box.innerHTML = '<div class="audit-item"><p class="helper-text">No admin actions logged yet.</p></div>';
+    return;
+  }
+
+  box.innerHTML = logs
+    .map((item) => {
+      const dateLabel = item.startDate === item.endDate ? item.startDate : `${item.startDate} to ${item.endDate}`;
+      const reason = item.reason ? `<p class="audit-meta">Reason: ${escapeHtml(item.reason)}</p>` : "";
+      return `
+        <article class="audit-item">
+          <h3>${escapeHtml(item.adminId)} updated ${escapeHtml(item.courseKey)}</h3>
+          <p class="audit-meta">${escapeHtml(formatUpdateType(item.updateType))} | ${escapeHtml(dateLabel)} | ${escapeHtml(item.timestamp)}</p>
+          <p class="audit-meta">From: ${escapeHtml(item.prevState)}</p>
+          <p class="audit-meta">To: ${escapeHtml(item.newState)}</p>
+          ${reason}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderAdminUi() {
+  const form = document.querySelector("#admin-update-form");
+  const status = document.querySelector("#admin-auth-status");
+  const loginBtn = document.querySelector("#admin-login");
+  const logoutBtn = document.querySelector("#admin-logout");
+  const courseSelect = document.querySelector("#admin-course");
+  if (!form || !status || !loginBtn || !logoutBtn || !courseSelect) return;
+
+  if (state.adminSession && state.adminSession.adminId) {
+    status.textContent = `Signed in as ${state.adminSession.adminId}`;
+    form.hidden = false;
+    loginBtn.hidden = true;
+    logoutBtn.hidden = false;
+  } else {
+    status.textContent = "Not signed in";
+    form.hidden = true;
+    loginBtn.hidden = false;
+    logoutBtn.hidden = true;
+  }
+
+  const courseOptions = [...state.courseMap.keys()]
+    .map((key) => `<option value="${escapeHtml(key)}">${escapeHtml(key)}</option>`)
+    .join("");
+  courseSelect.innerHTML = courseOptions;
+}
+
+function toggleAdminFieldVisibility() {
+  const updateType = document.querySelector("#admin-update-type")?.value;
+  const mode = document.querySelector("#admin-effective-mode")?.value;
+  const endDate = document.querySelector("#admin-end-date");
+
+  const venueFields = document.querySelectorAll(".js-venue-field");
+  const timeFields = document.querySelectorAll(".js-time-field");
+
+  venueFields.forEach((el) => {
+    el.hidden = updateType !== "venue_change";
+  });
+
+  timeFields.forEach((el) => {
+    el.hidden = updateType !== "time_change";
+  });
+
+  if (endDate) {
+    endDate.disabled = mode !== "range";
+    if (mode !== "range") {
+      endDate.value = "";
+    }
+  }
+}
+
+function refreshDerivedEvents() {
+  state.events = applyUpdatesToEvents(state.baseEvents, state.updates);
+  state.courseMap = buildCourseMap(state.events);
+  state.courseIndexMap = buildCourseIndexMap(state.courseMap);
+
+  const cleaned = new Set();
+  for (const key of state.selectedCourses) {
+    if (state.courseMap.has(key)) {
+      cleaned.add(key);
+    }
+  }
+  state.selectedCourses = cleaned;
+}
+
 function normalizeSearchText(value) {
   return String(value || "")
     .toLowerCase()
@@ -470,7 +817,6 @@ function levenshteinDistance(a, b) {
     prev = curr;
     curr = tmp;
   }
-
   return prev[n];
 }
 
@@ -648,7 +994,8 @@ function buildTimetableData() {
       subject: event.subject || "Untitled",
       batch: event.batch || "",
       location: normalizeLocation(event.location),
-      section: event.section || ""
+      section: event.section || "",
+      cancelled: !!event.__cancelledBy
     };
 
     const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
@@ -669,7 +1016,8 @@ function buildTimetableData() {
         subject: event.subject || "Untitled",
         batch: event.batch || "",
         location: normalizeLocation(event.location),
-        section: event.section || ""
+        section: event.section || "",
+        cancelled: !!event.__cancelledBy
       };
 
       const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
@@ -760,13 +1108,16 @@ function renderTimetable() {
         const content = entries
           .map(
             (entry) =>
-              `<span class=\"slot-title\">${escapeHtml(entry.subject)}${
+              `<span class="${entry.cancelled ? 'slot-title slot-cancelled' : 'slot-title'}">${escapeHtml(entry.subject)}${
                 entry.batch ? ` (Batch ${escapeHtml(entry.batch)})` : ""
-              }</span><span class=\"slot-venue\">${escapeHtml(entry.location || "Venue TBA")}</span>`
+              }</span>${entry.cancelled ? '<span class="slot-cancelled-badge">Cancelled</span>' : ''}<span class="${entry.cancelled ? 'slot-venue slot-cancelled' : 'slot-venue'}">${escapeHtml(entry.location || "Venue TBA")}</span>`
           )
           .join("<hr>");
 
-        return `<td class=\"filled\">${content}</td>`;
+        const hasCancelled = entries.some((e) => e.cancelled);
+        const hasActive = entries.some((e) => !e.cancelled);
+        const tdClass = !hasActive && hasCancelled ? "filled cell-all-cancelled" : "filled";
+        return `<td class="${tdClass}">${content}</td>`;
       })
       .join("");
 
@@ -781,6 +1132,10 @@ function rerender() {
   renderCourseList();
   renderSelectedCourses();
   renderTimetable();
+  renderActiveUpdates();
+  renderAuditLog();
+  renderAdminUi();
+  toggleAdminFieldVisibility();
 }
 
 function bindEvents() {
@@ -792,6 +1147,14 @@ function bindEvents() {
   const downloadImageBtn = document.querySelector("#download-image");
   const shareImageBtn = document.querySelector("#share-image");
   const shareNameInput = document.querySelector("#share-name");
+  const adminPasscodeInput = document.querySelector("#admin-passcode");
+  const adminLoginBtn = document.querySelector("#admin-login");
+  const adminLogoutBtn = document.querySelector("#admin-logout");
+  const adminPasscodeToggle = document.querySelector("#admin-passcode-toggle");
+  const adminUpdateForm = document.querySelector("#admin-update-form");
+  const adminTypeSelect = document.querySelector("#admin-update-type");
+  const adminModeSelect = document.querySelector("#admin-effective-mode");
+  const adminClearUpdatesBtn = document.querySelector("#admin-clear-updates");
 
   searchInput.addEventListener("input", (e) => {
     state.search = e.target.value || "";
@@ -841,6 +1204,191 @@ function bindEvents() {
       writeSelectionToUrl();
     });
   }
+
+  if (adminTypeSelect) {
+    adminTypeSelect.addEventListener("change", toggleAdminFieldVisibility);
+  }
+
+  if (adminPasscodeToggle && adminPasscodeInput) {
+    adminPasscodeToggle.addEventListener("click", () => {
+      const isHidden = adminPasscodeInput.type === "password";
+      adminPasscodeInput.type = isHidden ? "text" : "password";
+      adminPasscodeToggle.setAttribute("aria-label", isHidden ? "Hide passcode" : "Show passcode");
+      adminPasscodeToggle.style.opacity = isHidden ? "1" : "0.5";
+    });
+  }
+
+  if (adminModeSelect) {
+    adminModeSelect.addEventListener("change", toggleAdminFieldVisibility);
+  }
+
+  if (adminLoginBtn && adminPasscodeInput) {
+    adminLoginBtn.addEventListener("click", async () => {
+      const pass = String(adminPasscodeInput.value || "").trim();
+      if (!pass) {
+        window.alert("Enter an admin passcode.");
+        return;
+      }
+
+      adminLoginBtn.disabled = true;
+      adminLoginBtn.textContent = "Signing in...";
+
+      try {
+        const result = await callFunction("admin-login", { passcode: pass });
+        state.adminSession = { adminId: result.adminId, token: result.token };
+        adminPasscodeInput.value = "";
+        saveAdminSession();
+        rerender();
+      } catch (err) {
+        window.alert(err.message || "Sign in failed.");
+      } finally {
+        adminLoginBtn.disabled = false;
+        adminLoginBtn.textContent = "Sign in";
+      }
+    });
+  }
+
+  if (adminLogoutBtn) {
+    adminLogoutBtn.addEventListener("click", () => {
+      state.adminSession = null;
+      saveAdminSession();
+      rerender();
+    });
+  }
+
+  if (adminUpdateForm) {
+    adminUpdateForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!state.adminSession || !state.adminSession.adminId) {
+        window.alert("Sign in as admin first.");
+        return;
+      }
+
+      const courseKey = String(document.querySelector("#admin-course")?.value || "").trim();
+      const updateType = String(document.querySelector("#admin-update-type")?.value || "").trim();
+      const effectiveMode = String(document.querySelector("#admin-effective-mode")?.value || "single").trim();
+      const startDate = String(document.querySelector("#admin-start-date")?.value || "").trim();
+      const rawEndDate = String(document.querySelector("#admin-end-date")?.value || "").trim();
+      const reason = String(document.querySelector("#admin-reason")?.value || "").trim();
+
+      const newVenue = String(document.querySelector("#admin-new-venue")?.value || "").trim();
+      const newStartTime = String(document.querySelector("#admin-new-start-time")?.value || "").trim();
+      const newEndTime = String(document.querySelector("#admin-new-end-time")?.value || "").trim();
+
+      if (!courseKey || !startDate) {
+        window.alert("Course and start date are required.");
+        return;
+      }
+
+      const endDate = effectiveMode === "range" ? rawEndDate : startDate;
+      if (!endDate) {
+        window.alert("End date is required for date range updates.");
+        return;
+      }
+      if (endDate < startDate) {
+        window.alert("End date cannot be before start date.");
+        return;
+      }
+
+      if (updateType === "venue_change" && !newVenue) {
+        window.alert("Provide the new venue.");
+        return;
+      }
+
+      if (updateType === "time_change") {
+        if (!newStartTime || !newEndTime) {
+          window.alert("Provide both new start and end times.");
+          return;
+        }
+        if (newEndTime <= newStartTime) {
+          window.alert("New end time should be after start time.");
+          return;
+        }
+      }
+
+      const matchingBefore = state.baseEvents.filter(
+        (event) =>
+          normalizeCourseKey(event) === courseKey &&
+          (() => {
+            const ymd = dateOnlyFromIso(event.start);
+            return ymd && ymd >= startDate && ymd <= endDate;
+          })()
+      );
+
+      if (!matchingBefore.length) {
+        window.alert("No classes found for the selected course in that date window.");
+        return;
+      }
+
+      const tempUpdate = {
+        id: "__preview",
+        courseKey, updateType, effectiveMode,
+        startDate, endDate,
+        newVenue, newStartTime, newEndTime,
+        reason, adminId: state.adminSession.adminId,
+        createdAt: new Date().toISOString(),
+        isDeleted: false
+      };
+      const summary = buildAdminSummary(tempUpdate, matchingBefore);
+
+      const publishBtn = document.querySelector("#admin-publish-update");
+      if (publishBtn) { publishBtn.disabled = true; publishBtn.textContent = "Publishing..."; }
+
+      try {
+        await callFunction("publish-update", {
+          token: state.adminSession.token,
+          courseKey, updateType, effectiveMode,
+          startDate, endDate,
+          newVenue: newVenue || null,
+          newStartTime: newStartTime || null,
+          newEndTime: newEndTime || null,
+          reason: reason || null,
+          prevState: summary.prevState,
+          newState: summary.newState
+        });
+
+        await fetchPublicData();
+        refreshDerivedEvents();
+        rerender();
+        adminUpdateForm.reset();
+        toggleAdminFieldVisibility();
+      } catch (err) {
+        window.alert(err.message || "Failed to publish update.");
+      } finally {
+        if (publishBtn) { publishBtn.disabled = false; publishBtn.textContent = "Publish update"; }
+      }
+    });
+  }
+
+  if (adminClearUpdatesBtn) {
+    adminClearUpdatesBtn.addEventListener("click", async () => {
+      if (!state.adminSession || !state.adminSession.adminId) {
+        window.alert("Sign in as admin first.");
+        return;
+      }
+
+      const ok = window.confirm("Clear all active updates? This resets timetable overrides.");
+      if (!ok) return;
+
+      adminClearUpdatesBtn.disabled = true;
+      adminClearUpdatesBtn.textContent = "Clearing...";
+
+      try {
+        await callFunction("publish-update", {
+          token: state.adminSession.token,
+          action: "clear_all"
+        });
+        await fetchPublicData();
+        refreshDerivedEvents();
+        rerender();
+      } catch (err) {
+        window.alert(err.message || "Failed to clear updates.");
+      } finally {
+        adminClearUpdatesBtn.disabled = false;
+        adminClearUpdatesBtn.textContent = "Clear all updates";
+      }
+    });
+  }
 }
 
 async function init() {
@@ -848,19 +1396,23 @@ async function init() {
   table.innerHTML = "<thead><tr><th>Loading...</th></tr></thead>";
 
   try {
-    const res = await fetch(DATA_URL, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`Failed to load data: ${res.status}`);
+    const [eventsRes] = await Promise.all([
+      fetch(DATA_URL, { cache: "no-store" })
+    ]);
+
+    if (!eventsRes.ok) {
+      throw new Error(`Failed to load data: ${eventsRes.status}`);
     }
 
-    const data = await res.json();
+    const data = await eventsRes.json();
     if (!Array.isArray(data)) {
       throw new Error("raw-events.json is not an array.");
     }
 
-    state.events = data;
-    state.courseMap = buildCourseMap(data);
-    state.courseIndexMap = buildCourseIndexMap(state.courseMap);
+    state.baseEvents = data;
+    loadAdminSession();
+    await fetchPublicData();
+    refreshDerivedEvents();
     state.selectedCourses = getSelectionFromUrl(state.courseMap, state.courseIndexMap);
     state.shareName = getShareNameFromUrl();
 

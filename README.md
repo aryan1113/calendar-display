@@ -119,6 +119,40 @@ Note: opening [index.html](index.html) directly via file explorer may fail to lo
 - custom share text using your name (`Checkout {name}'s timetable from: {link}`)
 - export timetable as downloadable PNG image
 - native image sharing (WhatsApp, Telegram, and any app supported by device share sheet)
+- admin panel with passcode-based login for publishing updates
+- update types: cancellation, venue change, and time change
+- effective window: single date or date range
+- public active-updates board (visible in the UI)
+- public admin log showing who changed what from previous state to new state
+
+## Admin Update Controls
+
+Configured in [app.js](app.js):
+
+- `ADMIN_PASSCODES` defines admin ID to passcode mappings
+- each passcode signs in as that admin ID
+- published updates are appended to audit log entries with:
+	- timestamp
+	- admin ID
+	- course
+	- update type
+	- start/end date
+	- previous state
+	- new state
+
+### Update Behavior
+
+- cancellation: removes matched classes from timetable output
+- venue change: replaces venue for matched classes
+- time change: replaces start/end time for matched classes
+- date range support: applies to all classes for the course between `start_date` and `end_date` (inclusive)
+
+### Storage Note
+
+Current implementation stores updates, admin session, and audit log in browser localStorage.
+
+This means changes are persistent on that browser/device, but not globally synced across all users.
+For shared multi-user production behavior, connect these records to a backend data store/API.
 
 ## Shareable URL State
 

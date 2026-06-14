@@ -115,6 +115,90 @@
         </div>
       </section>
 
+      <section class="updates-panel" aria-label="Class updates and announcements">
+        <div class="updates-head">
+          <h2>Live Class Updates</h2>
+          <p class="helper-text">Cancellations, venue changes, and time changes appear here.</p>
+        </div>
+        <div id="active-updates" class="active-updates"></div>
+      </section>
+
+      <section class="admin-panel" aria-label="Admin update controls">
+        <div class="admin-head">
+          <h2>Admin Controls</h2>
+          <p class="helper-text">Use an admin passcode to publish timetable updates.</p>
+        </div>
+
+        <div id="admin-auth-block" class="admin-auth-block">
+          <label for="admin-passcode">Admin passcode</label>
+          <div class="admin-auth-row">
+            <div class="passcode-wrap">
+              <input
+                id="admin-passcode"
+                type="password"
+                placeholder="Enter passcode"
+                autocomplete="off"
+              />
+              <button id="admin-passcode-toggle" class="passcode-eye" type="button" aria-label="Show passcode">&#128065;</button>
+            </div>
+            <button id="admin-login" class="ghost-btn" type="button">Sign in</button>
+            <button id="admin-logout" class="ghost-btn" type="button" hidden>Sign out</button>
+          </div>
+          <p id="admin-auth-status" class="helper-text">Not signed in</p>
+        </div>
+
+        <form id="admin-update-form" class="admin-update-form" hidden>
+          <div class="admin-form-grid">
+            <label for="admin-course">Course</label>
+            <select id="admin-course" required></select>
+
+            <label for="admin-update-type">Update type</label>
+            <select id="admin-update-type" required>
+              <option value="cancellation">Cancellation</option>
+              <option value="venue_change">Venue change</option>
+              <option value="time_change">Time change</option>
+            </select>
+
+            <label for="admin-effective-mode">Effective mode</label>
+            <select id="admin-effective-mode" required>
+              <option value="single">Single date</option>
+              <option value="range">Date range</option>
+            </select>
+
+            <label for="admin-start-date">Start date</label>
+            <input id="admin-start-date" type="date" required />
+
+            <label for="admin-end-date">End date</label>
+            <input id="admin-end-date" type="date" />
+
+            <label for="admin-new-venue" class="js-venue-field">New venue</label>
+            <input id="admin-new-venue" class="js-venue-field" type="text" placeholder="e.g., Section A1" />
+
+            <label for="admin-new-start-time" class="js-time-field">New start time</label>
+            <input id="admin-new-start-time" class="js-time-field" type="time" />
+
+            <label for="admin-new-end-time" class="js-time-field">New end time</label>
+            <input id="admin-new-end-time" class="js-time-field" type="time" />
+
+            <label for="admin-reason">Reason (optional)</label>
+            <input id="admin-reason" type="text" maxlength="120" placeholder="Optional note" />
+          </div>
+
+          <div class="selected-actions">
+            <button id="admin-publish-update" class="ghost-btn" type="submit">Publish update</button>
+            <button id="admin-clear-updates" class="ghost-btn" type="button">Clear all updates</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="audit-panel" aria-label="Public admin update log">
+        <div class="updates-head">
+          <h2>Public Admin Log</h2>
+          <p class="helper-text">Visible log of who changed what and when.</p>
+        </div>
+        <div id="audit-log" class="audit-log"></div>
+      </section>
+
       <section class="about-footnote" aria-label="Project motivation and acknowledgements">
         <details>
           <summary>About this project (for curious users)</summary>
