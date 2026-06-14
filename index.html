@@ -106,8 +106,14 @@
 
       <section class="table-panel" aria-label="Weekly timetable">
         <div class="table-head">
-          <h2>Weekly Timetable</h2>
-          <p class="helper-text" id="week-label">Current week</p>
+          <div class="table-title-wrap">
+            <h2>Weekly Timetable</h2>
+            <div class="week-nav" aria-label="Week navigation">
+              <button id="prev-week" class="week-nav-btn" type="button" aria-label="Show previous week">&#8592;</button>
+              <p class="helper-text" id="week-label">Current week</p>
+              <button id="next-week" class="week-nav-btn" type="button" aria-label="Show next week">&#8594;</button>
+            </div>
+          </div>
           <p class="helper-text">Cell content format: Course Name + Venue</p>
         </div>
         <div class="table-wrap">

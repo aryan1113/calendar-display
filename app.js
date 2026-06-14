@@ -26,6 +26,7 @@ const state = {
   selectedCourses: new Set(),
   search: "",
   shareName: "",
+  weekOffset: 0,
   weekLabelText: "Current week",
   updates: [],
   auditLog: [],
@@ -159,12 +160,13 @@ function formatUpdateType(type) {
   return "Update";
 }
 
-function getCurrentWeekRange() {
+function getWeekRange(weekOffset = 0) {
   const now = new Date();
   const monday = new Date(now);
   const day = monday.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   monday.setDate(monday.getDate() + mondayOffset);
+  monday.setDate(monday.getDate() + weekOffset * 7);
   monday.setHours(0, 0, 0, 0);
 
   const sunday = new Date(monday);
@@ -174,10 +176,19 @@ function getCurrentWeekRange() {
   return { start: monday, end: sunday };
 }
 
-function isEventInCurrentWeek(event, weekRange) {
+function isEventInWeek(event, weekRange) {
   const d = parseIsoToLocalDate(event.start);
   if (!d) return false;
   return d >= weekRange.start && d <= weekRange.end;
+}
+
+function hasSelectedEventsInWeek(weekOffset) {
+  if (!state.selectedCourses.size) return false;
+
+  const weekRange = getWeekRange(weekOffset);
+  return state.events.some(
+    (event) => state.selectedCourses.has(normalizeCourseKey(event)) && isEventInWeek(event, weekRange)
+  );
 }
 
 function buildCourseIndexMap(courseMap) {
@@ -943,35 +954,15 @@ function renderSelectedCourses() {
 
 function buildTimetableData() {
   const selected = state.selectedCourses;
-  const weekRange = getCurrentWeekRange();
+  const weekRange = getWeekRange(state.weekOffset);
   const selectedCourseEvents = state.events.filter((event) => selected.has(normalizeCourseKey(event)));
 
-  const currentWeekEvents = selectedCourseEvents.filter((event) => isEventInCurrentWeek(event, weekRange));
-
-  const nextMonday = new Date(weekRange.start);
-  nextMonday.setDate(nextMonday.getDate() + 7);
-
-  const nextMondayEvents = selectedCourseEvents.filter((event) => isEventOnLocalDate(event, nextMonday));
-
-  const hasNextMondayPreview = nextMondayEvents.length > 0;
-  const previewRowKey = "__NEXT_MONDAY__";
+  const currentWeekEvents = selectedCourseEvents.filter((event) => isEventInWeek(event, weekRange));
   const rows = DAYS.map((day) => ({ key: day, label: day }));
-
-  if (hasNextMondayPreview) {
-    const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
-    rows.push({
-      key: previewRowKey,
-      label: `Monday (next week: ${fmt.format(nextMonday)})`
-    });
-  }
-
-  const selectedEvents = hasNextMondayPreview
-    ? [...currentWeekEvents, ...nextMondayEvents]
-    : currentWeekEvents;
 
   const slots = Array.from(
     new Set(
-      selectedEvents
+      currentWeekEvents
         .map((event) => getSlotLabel(event.start))
         .filter(Boolean)
     )
@@ -1007,31 +998,6 @@ function buildTimetableData() {
     }
   }
 
-  if (hasNextMondayPreview) {
-    for (const event of nextMondayEvents) {
-      const slot = getSlotLabel(event.start);
-      if (!slot || !grid[previewRowKey] || !grid[previewRowKey][slot]) continue;
-
-      const entry = {
-        subject: event.subject || "Untitled",
-        batch: event.batch || "",
-        location: normalizeLocation(event.location),
-        section: event.section || "",
-        cancelled: !!event.__cancelledBy
-      };
-
-      const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
-      const seen = new Set(
-        grid[previewRowKey][slot].map(
-          (item) => `${item.subject}||${item.batch}||${item.location}||${item.section}`
-        )
-      );
-      if (!seen.has(dedupeKey)) {
-        grid[previewRowKey][slot].push(entry);
-      }
-    }
-  }
-
   for (const row of rows) {
     for (const slot of slots) {
       grid[row.key][slot].sort((a, b) => {
@@ -1042,24 +1008,32 @@ function buildTimetableData() {
     }
   }
 
-  return { slots, grid, weekRange, rows, hasNextMondayPreview };
+  return { slots, grid, weekRange, rows };
 }
 
 function renderTimetable() {
   const table = document.querySelector("#timetable");
-  const { slots, grid, weekRange, rows, hasNextMondayPreview } = buildTimetableData();
+  const { slots, grid, weekRange, rows } = buildTimetableData();
   const label = document.querySelector("#week-label");
-  const now = new Date();
-  const todayKey = DAYS[now.getDay() === 0 ? 6 : now.getDay() - 1];
-  const previewRowKey = "__NEXT_MONDAY__";
+  const prevWeekBtn = document.querySelector("#prev-week");
+  const nextWeekBtn = document.querySelector("#next-week");
+  const today = new Date();
+  const todayKey = DAYS[today.getDay() === 0 ? 6 : today.getDay() - 1];
+  const isViewingCurrentWeek = state.weekOffset === 0;
 
   if (label) {
     const fmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" });
-    state.weekLabelText = `Current week: ${fmt.format(weekRange.start)} - ${fmt.format(weekRange.end)}`;
-    if (hasNextMondayPreview) {
-      state.weekLabelText += " + next Monday preview";
-    }
+    const prefix = state.weekOffset === 0 ? "Current week" : state.weekOffset > 0 ? `Week +${state.weekOffset}` : `Week ${state.weekOffset}`;
+    state.weekLabelText = `${prefix}: ${fmt.format(weekRange.start)} - ${fmt.format(weekRange.end)}`;
     label.textContent = state.weekLabelText;
+  }
+
+  if (prevWeekBtn) {
+    prevWeekBtn.disabled = state.weekOffset <= 0;
+  }
+
+  if (nextWeekBtn) {
+    nextWeekBtn.disabled = !hasSelectedEventsInWeek(state.weekOffset + 1);
   }
 
   if (!state.selectedCourses.size) {
@@ -1090,15 +1064,21 @@ function renderTimetable() {
   `;
 
   const bodyRows = rows.map((row) => {
-    const isToday = row.key === todayKey;
-    const isPreview = row.key === previewRowKey;
-    const rowClass = [isToday ? "row-today" : "", isPreview ? "row-preview" : ""]
+    const rowDate = new Date(weekRange.start);
+    rowDate.setDate(weekRange.start.getDate() + DAYS.indexOf(row.key));
+    const isToday =
+      isViewingCurrentWeek &&
+      row.key === todayKey &&
+      rowDate.getFullYear() === today.getFullYear() &&
+      rowDate.getMonth() === today.getMonth() &&
+      rowDate.getDate() === today.getDate();
+    const rowClass = [isToday ? "row-today" : ""]
       .filter(Boolean)
       .join(" ");
 
     const rowLabel = `${escapeHtml(row.label)}${
       isToday ? '<span class="day-pill">Today</span>' : ""
-    }${isPreview ? '<span class="day-pill day-pill-preview">Next week</span>' : ""}`;
+    }`;
 
     const cols = slots
       .map((slot) => {
@@ -1146,6 +1126,8 @@ function bindEvents() {
   const copyShareTextBtn = document.querySelector("#copy-share-text");
   const downloadImageBtn = document.querySelector("#download-image");
   const shareImageBtn = document.querySelector("#share-image");
+  const prevWeekBtn = document.querySelector("#prev-week");
+  const nextWeekBtn = document.querySelector("#next-week");
   const shareNameInput = document.querySelector("#share-name");
   const adminPasscodeInput = document.querySelector("#admin-passcode");
   const adminLoginBtn = document.querySelector("#admin-login");
@@ -1202,6 +1184,22 @@ function bindEvents() {
     shareNameInput.addEventListener("input", (e) => {
       state.shareName = (e.target.value || "").trim();
       writeSelectionToUrl();
+    });
+  }
+
+  if (prevWeekBtn) {
+    prevWeekBtn.addEventListener("click", () => {
+      if (state.weekOffset <= 0) return;
+      state.weekOffset -= 1;
+      renderTimetable();
+    });
+  }
+
+  if (nextWeekBtn) {
+    nextWeekBtn.addEventListener("click", () => {
+      if (!hasSelectedEventsInWeek(state.weekOffset + 1)) return;
+      state.weekOffset += 1;
+      renderTimetable();
     });
   }
 

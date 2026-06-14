@@ -346,6 +346,46 @@ h2 {
   flex-wrap: wrap;
 }
 
+.table-title-wrap {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.week-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.week-nav-btn {
+  width: 1.95rem;
+  height: 1.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.week-nav-btn:hover {
+  border-color: #b89c78;
+}
+
+.week-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#week-label {
+  margin: 0;
+}
+
 .table-wrap {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
@@ -612,6 +652,10 @@ td.filled {
 
   .admin-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .table-head {
+    align-items: flex-start;
   }
 
   .about-footnote {
