@@ -53,6 +53,10 @@ body {
   box-shadow: var(--shadow);
 }
 
+.audit-panel {
+  display: none;
+}
+
 .hero {
   padding: 1.6rem;
 }

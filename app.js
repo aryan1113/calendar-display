@@ -30,7 +30,9 @@ const state = {
   weekLabelText: "Current week",
   updates: [],
   auditLog: [],
-  adminSession: null
+  adminSession: null,
+  auditLogDisplayCount: 3,
+  activeUpdatesDisplayCount: 3
 };
 
 const EXPORT_IMAGE_NAME = "iimk-timetable.png";
@@ -162,6 +164,20 @@ function formatUpdateType(type) {
   if (type === "venue_change") return "Venue Change";
   if (type === "time_change") return "Time Change";
   return "Update";
+}
+
+function findDuplicateUpdate(courseKey, updateType, startDate, endDate, newVenue, newStartTime, newEndTime) {
+  return state.updates.find(update => {
+    if (update.isDeleted) return false;
+    if (update.courseKey !== courseKey) return false;
+    if (update.updateType !== updateType) return false;
+    if (update.startDate !== startDate || update.endDate !== endDate) return false;
+
+    if (updateType === "venue_change" && update.newVenue !== newVenue) return false;
+    if (updateType === "time_change" && (update.newStartTime !== newStartTime || update.newEndTime !== newEndTime)) return false;
+
+    return true;
+  });
 }
 
 function getWeekRange(weekOffset = 0) {
@@ -663,10 +679,14 @@ async function fetchPublicData() {
     const data = await callFunction("get-public-data", {});
     state.updates = (data.updates ?? []).map(mapUpdateFromApi);
     state.auditLog = (data.auditLog ?? []).map(mapAuditFromApi);
+    state.auditLogDisplayCount = 3;
+    state.activeUpdatesDisplayCount = 3;
   } catch (_) {
     // Non-fatal: fall back to empty; timetable still renders from base events.
     state.updates = [];
     state.auditLog = [];
+    state.auditLogDisplayCount = 3;
+    state.activeUpdatesDisplayCount = 3;
   }
 }
 
@@ -705,16 +725,31 @@ function renderActiveUpdates() {
   const box = document.querySelector("#active-updates");
   if (!box) return;
 
-  const updates = [...state.updates]
+  let updates = [...state.updates]
     .filter((item) => !item.isDeleted)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  // Deduplication: keep only the latest update for each unique (courseKey, prevState, newState, adminId)
+  const seen = new Set();
+  const dedupedUpdates = [];
+  for (const update of updates) {
+    const key = `${update.courseKey}|${update.prevState}|${update.newState}|${update.adminId}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      dedupedUpdates.push(update);
+    }
+  }
+  updates = dedupedUpdates;
 
   if (!updates.length) {
     box.innerHTML = '<div class="update-item"><p class="helper-text">No active updates right now.</p></div>';
     return;
   }
 
-  box.innerHTML = updates
+  const visibleUpdates = updates.slice(0, state.activeUpdatesDisplayCount);
+  const hasMore = updates.length > state.activeUpdatesDisplayCount;
+
+  let html = visibleUpdates
     .map((item) => {
       const dateLabel = item.startDate === item.endDate ? item.startDate : `${item.startDate} to ${item.endDate}`;
       const note = item.reason ? `<p class="update-meta">Reason: ${escapeHtml(item.reason)}</p>` : "";
@@ -727,6 +762,22 @@ function renderActiveUpdates() {
       `;
     })
     .join("");
+
+  if (hasMore) {
+    html += `<button id="show-more-updates" class="ghost-btn" type="button" style="width: 100%; margin-top: 1rem;">Show more updates (${updates.length - state.activeUpdatesDisplayCount} more)</button>`;
+  }
+
+  box.innerHTML = html;
+
+  if (hasMore) {
+    const showMoreBtn = document.querySelector("#show-more-updates");
+    if (showMoreBtn) {
+      showMoreBtn.addEventListener("click", () => {
+        state.activeUpdatesDisplayCount += 3;
+        renderActiveUpdates();
+      });
+    }
+  }
 }
 
 function renderAuditLog() {
@@ -740,7 +791,10 @@ function renderAuditLog() {
     return;
   }
 
-  box.innerHTML = logs
+  const visibleLogs = logs.slice(0, state.auditLogDisplayCount);
+  const hasMore = logs.length > state.auditLogDisplayCount;
+
+  let html = visibleLogs
     .map((item) => {
       const dateLabel = item.startDate === item.endDate ? item.startDate : `${item.startDate} to ${item.endDate}`;
       const reason = item.reason ? `<p class="audit-meta">Reason: ${escapeHtml(item.reason)}</p>` : "";
@@ -755,6 +809,22 @@ function renderAuditLog() {
       `;
     })
     .join("");
+
+  if (hasMore) {
+    html += `<button id="show-more-logs" class="ghost-btn" type="button" style="width: 100%; margin-top: 1rem;">Show more logs (${logs.length - state.auditLogDisplayCount} more)</button>`;
+  }
+
+  box.innerHTML = html;
+
+  if (hasMore) {
+    const showMoreBtn = document.querySelector("#show-more-logs");
+    if (showMoreBtn) {
+      showMoreBtn.addEventListener("click", () => {
+        state.auditLogDisplayCount += 3;
+        renderAuditLog();
+      });
+    }
+  }
 }
 
 function renderAdminUi() {
@@ -766,9 +836,11 @@ function renderAdminUi() {
   const loginBtn = document.querySelector("#admin-login");
   const logoutBtn = document.querySelector("#admin-logout");
   const courseSelect = document.querySelector("#admin-course");
+  const auditPanel = document.querySelector(".audit-panel");
   if (!form || !status || !loginBtn || !logoutBtn || !courseSelect) return;
 
   if (state.adminSession && state.adminSession.adminId) {
+    if (auditPanel) auditPanel.style.display = "block";
     status.textContent = `Signed in as ${state.adminSession.adminId}`;
     if (tabs) tabs.style.display = "flex";
     form.style.display = "grid";
@@ -777,6 +849,7 @@ function renderAdminUi() {
     loginBtn.style.display = "none";
     logoutBtn.style.display = "inline-block";
   } else {
+    if (auditPanel) auditPanel.style.display = "none";
     status.textContent = "Not signed in";
     if (tabs) tabs.style.display = "none";
     form.style.display = "none";
@@ -1385,6 +1458,14 @@ function bindEvents() {
         return;
       }
 
+      // Check for duplicate updates
+      const duplicate = findDuplicateUpdate(courseKey, updateType, startDate, endDate, newVenue, newStartTime, newEndTime);
+      if (duplicate) {
+        const dateLabel = startDate === endDate ? startDate : `${startDate} to ${endDate}`;
+        window.alert(`⚠️ An identical update already exists for this course on ${dateLabel}. Existing update created at ${duplicate.createdAt}.`);
+        return;
+      }
+
       const tempUpdate = {
         id: "__preview",
         courseKey, updateType, effectiveMode,
@@ -1502,9 +1583,41 @@ function bindEvents() {
         const summary = buildBulkImportSummary(entries, matches);
         console.log(`Summary: ${summary.totalClasses} codes, ${summary.foundCount} matches, ${summary.missingCodes.length} not found`);
 
+        // Check for duplicates in bulk import
+        const duplicates = [];
+        for (const entry of entries) {
+          for (const classCode of entry.classCodes) {
+            const key = `${entry.date}|${entry.startTime}|${entry.endTime}|${classCode}`;
+            const matchedEvents = matches[key];
+            if (matchedEvents && matchedEvents.length > 0) {
+              for (const event of matchedEvents) {
+                const courseKey = normalizeCourseKey(event);
+                const duplicate = state.updates.find(u =>
+                  !u.isDeleted &&
+                  u.updateType === "bulk_add" &&
+                  u.courseKey === courseKey &&
+                  u.startDate === entry.date
+                );
+                if (duplicate) {
+                  duplicates.push(`${classCode} on ${entry.date}`);
+                }
+              }
+            }
+          }
+        }
+
         let html = `<strong>Preview:</strong><br>`;
         html += `Total class codes: ${summary.totalClasses}<br>`;
         html += `Found matches: ${summary.foundCount}<br>`;
+
+        if (duplicates.length > 0) {
+          html += `<strong style="color: #ff9800;">⚠️ Already added (${duplicates.length}):</strong><br>`;
+          html += duplicates.slice(0, 5).map(c => `• ${c}`).join("<br>");
+          if (duplicates.length > 5) {
+            html += `<br>... and ${duplicates.length - 5} more`;
+          }
+          html += `<br><br>`;
+        }
 
         if (summary.missingCodes.length > 0) {
           html += `<strong style="color: #d32f2f;">Not found (${summary.missingCodes.length}):</strong><br>`;
