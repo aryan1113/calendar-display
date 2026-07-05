@@ -165,7 +165,36 @@ h2 {
   border-color: var(--accent);
 }
 
-.admin-update-form {
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tab-btn {
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.admin-tab-btn:hover {
+  color: var(--ink);
+}
+
+.admin-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.admin-update-form,
+.admin-bulk-form {
   margin-top: 0.85rem;
   display: grid;
   gap: 0.8rem;
@@ -175,6 +204,34 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem 0.7rem;
+}
+
+.admin-bulk-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.95rem;
+  font-family: "Monaco", "Courier New", monospace;
+  background: #fff;
+  color: var(--ink);
+  resize: vertical;
+  min-height: 150px;
+}
+
+.admin-bulk-form textarea:focus {
+  outline: 2px solid #99d6c6;
+  border-color: var(--accent);
+}
+
+.admin-bulk-preview {
+  padding: 0.75rem;
+  background: #f0faf7;
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+  font-size: 0.9rem;
+  color: var(--ink);
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .admin-form-grid label {
@@ -576,6 +633,33 @@ td.filled {
 
 .cell-all-cancelled {
   background: #fff5f2 !important;
+}
+
+.slot-new {
+  color: #1b5e20;
+  font-weight: 700;
+}
+
+.slot-new-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #1b5e20;
+  background: #c8e6c9;
+  border: 1px solid #81c784;
+  border-radius: 999px;
+  padding: 0.06rem 0.45rem;
+  margin: 0.2rem 0.3rem 0.15rem 0;
+}
+
+.cell-all-new {
+  background: #e8f5e9 !important;
+  border: 2px solid #81c784 !important;
+}
+
+.cell-has-new {
+  background: linear-gradient(135deg, #ffffff 0%, #e8f5e9 100%) !important;
 }
 
 .passcode-wrap {

@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.admins (
 CREATE TABLE IF NOT EXISTS public.updates (
   id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   course_key      text        NOT NULL,
-  update_type     text        NOT NULL CHECK (update_type IN ('cancellation', 'venue_change', 'time_change')),
+  update_type     text        NOT NULL CHECK (update_type IN ('cancellation', 'venue_change', 'time_change', 'bulk_add')),
   effective_mode  text        NOT NULL CHECK (effective_mode IN ('single', 'range')),
   start_date      date        NOT NULL,
   end_date        date        NOT NULL,
@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS public.updates (
   new_end_time    time,
   reason          text,
   admin_id        text        NOT NULL REFERENCES public.admins(admin_id),
+  event_id        text,
+  class_code      text,
   created_at      timestamptz NOT NULL DEFAULT now(),
   is_deleted      boolean     NOT NULL DEFAULT false
 );

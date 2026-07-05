@@ -115,6 +115,8 @@ async function callFunction(name, body) {
   });
   const data = await res.json();
   if (!res.ok) {
+    console.error(`❌ ${name} error response:`, data);
+    console.error(`Request body was:`, body);
     throw new Error(data.error || `Function ${name} failed (${res.status})`);
   }
   return data;
@@ -134,7 +136,9 @@ function mapUpdateFromApi(row) {
     reason: row.reason ?? "",
     adminId: row.admin_id,
     createdAt: row.created_at,
-    isDeleted: row.is_deleted ?? false
+    isDeleted: row.is_deleted ?? false,
+    eventId: row.event_id ?? null,
+    classCode: row.class_code ?? null
   };
 }
 
@@ -551,6 +555,56 @@ function applyUpdatesToEvents(baseEvents, updates) {
   for (const update of sortedUpdates) {
     if (!update || update.isDeleted) continue;
 
+    if (update.updateType === "bulk_add") {
+      // Find course by class code in base events
+      const courseCode = update.classCode;
+      const normalizedCode = courseCode.toUpperCase().trim();
+
+      const courseEvent = baseEvents.find(event => {
+        const abbrev = (event.abbreviation || "").toUpperCase().trim();
+        const batch = (event.batch || "").toUpperCase().trim();
+
+        // Exact matches
+        if (abbrev === normalizedCode) return true;
+        if (abbrev && batch && `${abbrev}-${batch}` === normalizedCode) return true;
+        if (abbrev && batch && `${abbrev}${batch}` === normalizedCode) return true;
+
+        // Prefix match: user code is prefix of abbreviation (e.g., "HSCM" matches "HSCM (LSM)")
+        const abbrevBase = abbrev.split(/[\s(]/)[0].trim();
+        if (abbrevBase === normalizedCode) return true;
+
+        // Batch suffix match with prefix (e.g., "GT-A" matches abbreviated "GT" with batch "A")
+        if (abbrevBase && batch) {
+          if (`${abbrevBase}-${batch}` === normalizedCode) return true;
+          if (`${abbrevBase}${batch}` === normalizedCode) return true;
+        }
+
+        return false;
+      });
+
+      if (courseEvent) {
+        const startTime = update.newStartTime || update.startTime;
+        const endTime = update.newEndTime || update.endTime;
+        const syntheticId = `${update.startDate}T${startTime.replace(':', '')}00-${courseCode}@bulk-import`;
+
+        // Check if already added
+        if (!working.find(e => e.id === syntheticId)) {
+          const startISO = toIsoWithTimeFromYmd(update.startDate, `${startTime}:00`);
+          const endISO = toIsoWithTimeFromYmd(update.startDate, `${endTime}:00`);
+
+          working.push({
+            ...courseEvent,
+            id: syntheticId,
+            start: startISO,
+            end: endISO,
+            __addedBy: update.id,
+            __isNew: true
+          });
+        }
+      }
+      continue;
+    }
+
     working = working
       .map((event) => {
         if (!updateAffectsEvent(update, event)) {
@@ -705,6 +759,9 @@ function renderAuditLog() {
 
 function renderAdminUi() {
   const form = document.querySelector("#admin-update-form");
+  const bulkForm = document.querySelector("#admin-bulk-form");
+  const tabs = document.querySelector(".admin-tabs");
+  const tabSingleBtn = document.querySelector("#admin-tab-single");
   const status = document.querySelector("#admin-auth-status");
   const loginBtn = document.querySelector("#admin-login");
   const logoutBtn = document.querySelector("#admin-logout");
@@ -713,14 +770,19 @@ function renderAdminUi() {
 
   if (state.adminSession && state.adminSession.adminId) {
     status.textContent = `Signed in as ${state.adminSession.adminId}`;
-    form.hidden = false;
-    loginBtn.hidden = true;
-    logoutBtn.hidden = false;
+    if (tabs) tabs.style.display = "flex";
+    form.style.display = "grid";
+    bulkForm.style.display = "none";
+    if (tabSingleBtn) tabSingleBtn.classList.add("active");
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "inline-block";
   } else {
     status.textContent = "Not signed in";
-    form.hidden = true;
-    loginBtn.hidden = false;
-    logoutBtn.hidden = true;
+    if (tabs) tabs.style.display = "none";
+    form.style.display = "none";
+    bulkForm.style.display = "none";
+    loginBtn.style.display = "inline-block";
+    logoutBtn.style.display = "none";
   }
 
   const courseOptions = [...state.courseMap.keys()]
@@ -986,7 +1048,8 @@ function buildTimetableData() {
       batch: event.batch || "",
       location: normalizeLocation(event.location),
       section: event.section || "",
-      cancelled: !!event.__cancelledBy
+      cancelled: !!event.__cancelledBy,
+      isNew: !!event.__isNew
     };
 
     const dedupeKey = `${entry.subject}||${entry.batch}||${entry.location}||${entry.section}`;
@@ -1088,15 +1151,19 @@ function renderTimetable() {
         const content = entries
           .map(
             (entry) =>
-              `<span class="${entry.cancelled ? 'slot-title slot-cancelled' : 'slot-title'}">${escapeHtml(entry.subject)}${
+              `<span class="${entry.isNew ? 'slot-title slot-new' : entry.cancelled ? 'slot-title slot-cancelled' : 'slot-title'}">${escapeHtml(entry.subject)}${
                 entry.batch ? ` (Batch ${escapeHtml(entry.batch)})` : ""
-              }</span>${entry.cancelled ? '<span class="slot-cancelled-badge">Cancelled</span>' : ''}<span class="${entry.cancelled ? 'slot-venue slot-cancelled' : 'slot-venue'}">${escapeHtml(entry.location || "Venue TBA")}</span>`
+              }</span>${entry.isNew ? '<span class="slot-new-badge">New</span>' : ''} ${entry.cancelled ? '<span class="slot-cancelled-badge">Cancelled</span>' : ''}<span class="${entry.isNew ? 'slot-venue slot-new' : entry.cancelled ? 'slot-venue slot-cancelled' : 'slot-venue'}">${escapeHtml(entry.location || "Venue TBA")}</span>`
           )
           .join("<hr>");
 
         const hasCancelled = entries.some((e) => e.cancelled);
-        const hasActive = entries.some((e) => !e.cancelled);
-        const tdClass = !hasActive && hasCancelled ? "filled cell-all-cancelled" : "filled";
+        const hasNew = entries.some((e) => e.isNew);
+        const hasActive = entries.some((e) => !e.cancelled && !e.isNew);
+        let tdClass = "filled";
+        if (!hasActive && hasCancelled) tdClass = "filled cell-all-cancelled";
+        else if (hasNew && !hasActive) tdClass = "filled cell-all-new";
+        else if (hasNew) tdClass = "filled cell-has-new";
         return `<td class="${tdClass}">${content}</td>`;
       })
       .join("");
@@ -1387,6 +1454,154 @@ function bindEvents() {
       }
     });
   }
+
+  const adminTabSingleBtn = document.querySelector("#admin-tab-single");
+  const adminTabBulkBtn = document.querySelector("#admin-tab-bulk");
+  const adminBulkForm = document.querySelector("#admin-bulk-form");
+  const adminBulkInput = document.querySelector("#admin-bulk-input");
+  const adminBulkPreview = document.querySelector("#admin-bulk-preview");
+
+  if (adminTabSingleBtn) {
+    adminTabSingleBtn.addEventListener("click", () => {
+      adminTabSingleBtn.classList.add("active");
+      adminTabBulkBtn?.classList.remove("active");
+      adminUpdateForm.style.display = "grid";
+      adminBulkForm.style.display = "none";
+    });
+  }
+
+  if (adminTabBulkBtn) {
+    adminTabBulkBtn.addEventListener("click", () => {
+      adminTabBulkBtn.classList.add("active");
+      adminTabSingleBtn?.classList.remove("active");
+      adminUpdateForm.style.display = "none";
+      adminBulkForm.style.display = "grid";
+    });
+  }
+
+  if (adminBulkInput) {
+    adminBulkInput.addEventListener("input", () => {
+      try {
+        const text = adminBulkInput.value.trim();
+        if (!text) {
+          adminBulkPreview.innerHTML = "";
+          return;
+        }
+
+        const entries = parseBulkScheduleText(text);
+        console.log(`Parsed ${entries.length} schedule entries`);
+        const matches = {};
+
+        for (const entry of entries) {
+          for (const classCode of entry.classCodes) {
+            const key = `${entry.date}|${entry.startTime}|${entry.endTime}|${classCode}`;
+            matches[key] = findMatchingEvents(state.baseEvents, classCode, entry.date, entry.startTime, entry.endTime);
+          }
+        }
+
+        const summary = buildBulkImportSummary(entries, matches);
+        console.log(`Summary: ${summary.totalClasses} codes, ${summary.foundCount} matches, ${summary.missingCodes.length} not found`);
+
+        let html = `<strong>Preview:</strong><br>`;
+        html += `Total class codes: ${summary.totalClasses}<br>`;
+        html += `Found matches: ${summary.foundCount}<br>`;
+
+        if (summary.missingCodes.length > 0) {
+          html += `<strong style="color: #d32f2f;">Not found (${summary.missingCodes.length}):</strong><br>`;
+          html += summary.missingCodes.slice(0, 5).map(c => `• ${c}`).join("<br>");
+          if (summary.missingCodes.length > 5) {
+            html += `<br>... and ${summary.missingCodes.length - 5} more`;
+          }
+        }
+
+        adminBulkPreview.innerHTML = html;
+      } catch (err) {
+        console.error("Error in bulk preview:", err);
+        adminBulkPreview.innerHTML = `<strong style="color: #d32f2f;">Error: ${escapeHtml(err.message)}</strong>`;
+      }
+    });
+  }
+
+  if (adminBulkForm) {
+    adminBulkForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      console.log("Bulk import form submitted");
+
+      if (!state.adminSession || !state.adminSession.token) {
+        window.alert("Sign in as admin first.");
+        return;
+      }
+
+      const text = adminBulkInput.value.trim();
+      if (!text) {
+        window.alert("Paste schedule data into the textarea.");
+        return;
+      }
+
+      try {
+        const entries = parseBulkScheduleText(text);
+        console.log(`Parsed ${entries.length} entries`);
+
+        if (entries.length === 0) {
+          window.alert("Could not parse any schedule entries. Check the format.");
+          return;
+        }
+
+        const matches = {};
+        for (const entry of entries) {
+          for (const classCode of entry.classCodes) {
+            const key = `${entry.date}|${entry.startTime}|${entry.endTime}|${classCode}`;
+            matches[key] = findMatchingEvents(state.baseEvents, classCode, entry.date, entry.startTime, entry.endTime);
+          }
+        }
+
+        const summary = buildBulkImportSummary(entries, matches);
+        console.log(`Found ${summary.foundCount} matches`);
+
+        if (summary.foundCount === 0) {
+          window.alert("No matching classes found. Check the class codes and dates.");
+          return;
+        }
+
+        const msg = `Import ${summary.foundCount} classes? ${summary.missingCodes.length > 0 ? `(${summary.missingCodes.length} codes not found)` : ""}`;
+        if (!window.confirm(msg)) return;
+
+        const submitBtn = adminBulkForm.querySelector("button[type='submit']");
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Importing..."; }
+
+        try {
+          console.log("=== Starting bulk import ===");
+          console.log("Entries parsed:", entries.length);
+          console.log("Entries:", entries);
+          console.log("Matches keys:", Object.keys(matches).length);
+
+          await publishBulkImport(entries, matches);
+          console.log("✓ Bulk import completed");
+
+          await fetchPublicData();
+          refreshDerivedEvents();
+          rerender();
+          adminBulkInput.value = "";
+          adminBulkPreview.innerHTML = "";
+          window.alert("Successfully imported bulk schedule!");
+        } catch (err) {
+          console.error("❌ Bulk import error:", err);
+          console.error("Error type:", err.constructor.name);
+          console.error("Error message:", err.message);
+          if (err.response) {
+            console.error("Response status:", err.response.status);
+            console.error("Response body:", err.response);
+          }
+          window.alert(`Error: ${err.message || "Failed to import bulk schedule."}`);
+        } finally {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Import bulk schedule"; }
+        }
+      } catch (err) {
+        console.error("Form submission error:", err);
+        window.alert(`Error: ${err.message || "Failed to import bulk schedule."}`);
+      }
+    });
+  }
 }
 
 async function init() {
@@ -1431,6 +1646,190 @@ async function init() {
       </tbody>
     `;
   }
+}
+
+function parseBulkScheduleText(text) {
+  const lines = text.trim().split('\n').filter(line => line.trim());
+  const entries = [];
+
+  const dateRegex = /^([A-Za-z]+),\s+(\d+)\s+([A-Za-z]+),\s+(\d{4})/;
+  const timeRegex = /(\d{1,2})\.(\d{2})-(\d{1,2})\.(\d{2})/;
+
+  const monthMap = {
+    'January': '01', 'February': '02', 'March': '03', 'April': '04',
+    'May': '05', 'June': '06', 'July': '07', 'August': '08',
+    'September': '09', 'October': '10', 'November': '11', 'December': '12'
+  };
+
+  for (const line of lines) {
+    const dateMatch = line.match(dateRegex);
+    if (!dateMatch) continue;
+
+    const [, dayName, dayNum, monthName, year] = dateMatch;
+    const monthNum = monthMap[monthName];
+    if (!monthNum) continue;
+
+    const dateYmd = `${year}-${monthNum}-${String(dayNum).padStart(2, '0')}`;
+
+    const timeMatch = line.match(timeRegex);
+    if (!timeMatch) continue;
+
+    const [, startHour, startMin, endHour, endMin] = timeMatch;
+    const startTime = `${String(startHour).padStart(2, '0')}:${startMin}`;
+    const endTime = `${String(endHour).padStart(2, '0')}:${endMin}`;
+    const originalTimeMatch = line.match(timeRegex);
+    const originalTimeEnd = originalTimeMatch ? originalTimeMatch[0].length : 0;
+    const timeStartPos = line.indexOf(originalTimeMatch[0]);
+    const timeEndPos = timeStartPos + originalTimeEnd;
+
+    const classPart = line.substring(timeEndPos).trim();
+    const classList = classPart.split(/[\s\t]+/).filter(code => {
+      const trimmed = code.trim();
+      return trimmed.length > 0 &&
+             trimmed !== "LUNCH" &&
+             trimmed !== "BREAK" &&
+             trimmed !== "MEETING" &&
+             !trimmed.startsWith("(") &&
+             !trimmed.startsWith('"') &&
+             !trimmed.includes("Common Room") &&
+             !trimmed.includes("EXAMINATION");
+    });
+
+    if (classList.length > 0) {
+      entries.push({
+        date: dateYmd,
+        startTime,
+        endTime,
+        classCodesRaw: classPart,
+        classCodes: classList
+      });
+    }
+  }
+
+  return entries;
+}
+
+function findMatchingEvents(baseEvents, classCode, date, startTime, endTime) {
+  const normalizedCode = classCode.toUpperCase().trim();
+
+  // Find ANY event with this course code (regardless of time/date)
+  const courseEvent = baseEvents.find(event => {
+    const abbrev = (event.abbreviation || "").toUpperCase().trim();
+    const batch = (event.batch || "").toUpperCase().trim();
+
+    // Exact matches
+    if (abbrev === normalizedCode) return true;
+    if (abbrev && batch && `${abbrev}-${batch}` === normalizedCode) return true;
+    if (abbrev && batch && `${abbrev}${batch}` === normalizedCode) return true;
+
+    // Prefix match: user code is prefix of abbreviation (e.g., "HSCM" matches "HSCM (LSM)")
+    const abbrevBase = abbrev.split(/[\s(]/)[0].trim();
+    if (abbrevBase === normalizedCode) return true;
+
+    // Batch suffix match with prefix (e.g., "GT-A" matches abbreviated "GT" with batch "A")
+    if (abbrevBase && batch) {
+      if (`${abbrevBase}-${batch}` === normalizedCode) return true;
+      if (`${abbrevBase}${batch}` === normalizedCode) return true;
+    }
+
+    return false;
+  });
+
+  // If course found, create a new event instance for the specified date/time
+  if (courseEvent) {
+    const dateObj = parseYmdToLocalDate(date);
+    if (!dateObj) return [];
+
+    const startISO = toIsoWithTimeFromYmd(date, `${startTime}:00`);
+    const endISO = toIsoWithTimeFromYmd(date, `${endTime}:00`);
+
+    return [{
+      ...courseEvent,
+      id: `${date}T${startTime.replace(':', '')}-${classCode}@bulk-import`,
+      start: startISO,
+      end: endISO,
+      __isNew: true,
+      __bulkImportCode: classCode
+    }];
+  }
+
+  return [];
+}
+
+function buildBulkImportSummary(entries, matches) {
+  const totalClasses = entries.reduce((sum, e) => sum + e.classCodes.length, 0);
+  const foundCount = Object.values(matches).flat().length;
+  const missingCodes = [];
+
+  for (const entry of entries) {
+    for (const code of entry.classCodes) {
+      const key = `${entry.date}|${entry.startTime}|${entry.endTime}|${code}`;
+      if (!matches[key] || matches[key].length === 0) {
+        missingCodes.push(`${code} (${entry.date} ${entry.startTime}-${entry.endTime})`);
+      }
+    }
+  }
+
+  return {
+    totalClasses,
+    foundCount,
+    missingCodes
+  };
+}
+
+async function publishBulkImport(entries, matches) {
+  if (!state.adminSession || !state.adminSession.token) {
+    throw new Error("Admin session required");
+  }
+
+  const updates = [];
+
+  for (const entry of entries) {
+    for (const classCode of entry.classCodes) {
+      const key = `${entry.date}|${entry.startTime}|${entry.endTime}|${classCode}`;
+      const matchedEvents = matches[key];
+
+      if (!matchedEvents || matchedEvents.length === 0) continue;
+
+      for (const event of matchedEvents) {
+        const courseKey = normalizeCourseKey(event);
+
+        if (!courseKey) {
+          console.warn(`Warning: No course key for event`, event);
+          continue;
+        }
+
+        const update = {
+          token: state.adminSession.token,
+          updateType: "bulk_add",
+          courseKey,
+          date: entry.date,
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          classCode,
+          eventId: event.id,
+          reason: `Added from bulk import on ${new Date().toLocaleDateString()}`,
+          prevState: "Not in schedule",
+          newState: `Scheduled: ${event.subject} at ${event.location}`
+        };
+
+        console.log(`Sending update to backend:`, JSON.stringify(update, null, 2).substring(0, 200));
+
+        console.log(`Preparing bulk_add update:`, update);
+
+        updates.push(
+          callFunction("publish-update", update)
+        );
+      }
+    }
+  }
+
+  if (updates.length === 0) {
+    throw new Error("No matching classes to import");
+  }
+
+  console.log(`Sending ${updates.length} bulk import updates`);
+  return Promise.all(updates);
 }
 
 init();

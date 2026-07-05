@@ -72,15 +72,27 @@ Deno.serve(async (req) => {
       startDate, endDate,
       newVenue, newStartTime, newEndTime,
       reason, prevState, newState,
+      eventId, date, classCode
     } = payload;
 
-    if (!courseKey || !updateType || !startDate || !endDate) {
-      return Response.json({ error: "Missing required fields" }, { status: 400, headers: CORS });
+    if (!updateType) {
+      return Response.json({ error: `Missing updateType. Got: ${updateType}` }, { status: 400, headers: CORS });
     }
-    if (!["cancellation", "venue_change", "time_change"].includes(updateType)) {
+    if (!["cancellation", "venue_change", "time_change", "bulk_add"].includes(updateType)) {
       return Response.json({ error: "Invalid update type" }, { status: 400, headers: CORS });
     }
-    if (endDate < startDate) {
+
+    // For bulk_add, date is required instead of startDate/endDate
+    if (updateType === "bulk_add") {
+      if (!courseKey || !date || !classCode) {
+        return Response.json({ error: `bulk_add requires courseKey, date, classCode. Got: courseKey=${courseKey}, date=${date}, classCode=${classCode}` }, { status: 400, headers: CORS });
+      }
+    } else {
+      if (!courseKey || !startDate || !endDate) {
+        return Response.json({ error: `Missing required fields. courseKey=${courseKey}, startDate=${startDate}, endDate=${endDate}` }, { status: 400, headers: CORS });
+      }
+    }
+    if (updateType !== "bulk_add" && endDate < startDate) {
       return Response.json({ error: "endDate before startDate" }, { status: 400, headers: CORS });
     }
 
@@ -89,14 +101,16 @@ Deno.serve(async (req) => {
       .insert({
         course_key: courseKey,
         update_type: updateType,
-        effective_mode: effectiveMode ?? "single",
-        start_date: startDate,
-        end_date: endDate,
+        effective_mode: effectiveMode ?? (updateType === "bulk_add" ? "single" : "single"),
+        start_date: updateType === "bulk_add" ? date : startDate,
+        end_date: updateType === "bulk_add" ? date : endDate,
         new_venue: newVenue ?? null,
-        new_start_time: newStartTime ?? null,
-        new_end_time: newEndTime ?? null,
+        new_start_time: updateType === "bulk_add" ? payload.startTime : (newStartTime ?? null),
+        new_end_time: updateType === "bulk_add" ? payload.endTime : (newEndTime ?? null),
         reason: reason ?? null,
         admin_id: adminId,
+        event_id: eventId ?? null,
+        class_code: classCode ?? null,
       })
       .select()
       .single();
@@ -109,8 +123,8 @@ Deno.serve(async (req) => {
       admin_id: adminId,
       course_key: courseKey,
       update_type: updateType,
-      start_date: startDate,
-      end_date: endDate,
+      start_date: updateType === "bulk_add" ? date : startDate,
+      end_date: updateType === "bulk_add" ? date : endDate,
       prev_state: prevState ?? "",
       new_state: newState ?? "",
       reason: reason ?? null,

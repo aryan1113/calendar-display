@@ -153,7 +153,12 @@
           <p id="admin-auth-status" class="helper-text">Not signed in</p>
         </div>
 
-        <form id="admin-update-form" class="admin-update-form" hidden>
+        <div class="admin-tabs">
+          <button id="admin-tab-single" class="admin-tab-btn active" type="button">Single Update</button>
+          <button id="admin-tab-bulk" class="admin-tab-btn" type="button">Bulk Import</button>
+        </div>
+
+        <form id="admin-update-form" class="admin-update-form" style="display: none;">
           <div class="admin-form-grid">
             <label for="admin-course">Course</label>
             <select id="admin-course" required></select>
@@ -193,6 +198,15 @@
           <div class="selected-actions">
             <button id="admin-publish-update" class="ghost-btn" type="submit">Publish update</button>
             <button id="admin-clear-updates" class="ghost-btn" type="button">Clear all updates</button>
+          </div>
+        </form>
+
+        <form id="admin-bulk-form" class="admin-bulk-form" style="display: none;">
+          <p class="helper-text">Paste your timetable schedule below. Format: Date, Time slot, Class codes (space or tab-separated per row)</p>
+          <textarea id="admin-bulk-input" placeholder="Monday, 6 July, 2026    09.15-10.30    FC    MITPS        MRBDM    POF" rows="10"></textarea>
+          <p id="admin-bulk-preview" class="admin-bulk-preview"></p>
+          <div class="selected-actions">
+            <button id="admin-bulk-import" class="ghost-btn" type="submit">Import bulk schedule</button>
           </div>
         </form>
       </section>
