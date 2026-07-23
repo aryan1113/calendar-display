@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    const [updatesRes, auditRes] = await Promise.all([
+    const [updatesRes, auditRes, alertsRes] = await Promise.all([
       supabase
         .from("updates")
         .select("*")
@@ -28,10 +28,15 @@ Deno.serve(async (req) => {
         .select("*")
         .order("action_ts", { ascending: false })
         .limit(200),
+      supabase
+        .from("class_alerts")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("event_date", { ascending: true }),
     ]);
 
     return Response.json(
-      { updates: updatesRes.data ?? [], auditLog: auditRes.data ?? [] },
+      { updates: updatesRes.data ?? [], auditLog: auditRes.data ?? [], classAlerts: alertsRes.data ?? [] },
       { headers: CORS },
     );
   } catch (_) {
