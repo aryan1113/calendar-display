@@ -8,6 +8,14 @@ const FN_BASE = `${SUPABASE_URL}/functions/v1`;
 
 const SESSION_STORAGE_KEY = "calendar-display-admin-session-v1";
 
+const ALERT_TYPE_META = {
+  quiz: { label: "Quiz", icon: "📝" },
+  simulation: { label: "Simulation", icon: "🧪" },
+  submission: { label: "Submission", icon: "📤" },
+  deadline: { label: "Deadline", icon: "⏰" },
+  other: { label: "Other", icon: "🔔" }
+};
+
 const DAYS = [
   "Monday",
   "Tuesday",
@@ -32,7 +40,8 @@ const state = {
   auditLog: [],
   adminSession: null,
   auditLogDisplayCount: 3,
-  activeUpdatesDisplayCount: 3
+  activeUpdatesDisplayCount: 3,
+  classAlerts: []
 };
 
 const EXPORT_IMAGE_NAME = "iimk-timetable.png";
@@ -122,6 +131,41 @@ async function callFunction(name, body) {
     throw new Error(data.error || `Function ${name} failed (${res.status})`);
   }
   return data;
+}
+
+function mapAlertFromApi(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    eventType: row.alert_type,
+    courseKey: row.course_key || "",
+    eventDate: row.event_date,
+    eventTime: row.event_time ? String(row.event_time).slice(0, 5) : "",
+    notes: row.notes || "",
+    adminId: row.admin_id
+  };
+}
+
+async function publishAlert({ title, eventType, courseKey, eventDate, eventTime, notes }) {
+  if (!state.adminSession || !state.adminSession.token) {
+    throw new Error("Admin session required");
+  }
+  await callFunction("publish-alert", {
+    token: state.adminSession.token,
+    title,
+    alertType: eventType,
+    courseKey: courseKey || null,
+    eventDate,
+    eventTime: eventTime || null,
+    notes: notes || null
+  });
+}
+
+async function deleteAlert(id) {
+  if (!state.adminSession || !state.adminSession.token) {
+    throw new Error("Admin session required");
+  }
+  await callFunction("publish-alert", { token: state.adminSession.token, action: "delete", id });
 }
 
 function mapUpdateFromApi(row) {
@@ -679,12 +723,14 @@ async function fetchPublicData() {
     const data = await callFunction("get-public-data", {});
     state.updates = (data.updates ?? []).map(mapUpdateFromApi);
     state.auditLog = (data.auditLog ?? []).map(mapAuditFromApi);
+    state.classAlerts = (data.classAlerts ?? []).map(mapAlertFromApi);
     state.auditLogDisplayCount = 3;
     state.activeUpdatesDisplayCount = 3;
   } catch (_) {
     // Non-fatal: fall back to empty; timetable still renders from base events.
     state.updates = [];
     state.auditLog = [];
+    state.classAlerts = [];
     state.auditLogDisplayCount = 3;
     state.activeUpdatesDisplayCount = 3;
   }
@@ -827,6 +873,57 @@ function renderAuditLog() {
   }
 }
 
+function renderAlertsList() {
+  const box = document.querySelector("#alerts-list");
+  const courseSelect = document.querySelector("#alert-course");
+  const isAdmin = !!(state.adminSession && state.adminSession.adminId);
+
+  if (courseSelect) {
+    const current = courseSelect.value;
+    const options = [...state.courseMap.keys()]
+      .map((key) => `<option value="${escapeHtml(key)}">${escapeHtml(key)}</option>`)
+      .join("");
+    courseSelect.innerHTML = `<option value="">None</option>${options}`;
+    if ([...state.courseMap.keys()].includes(current)) {
+      courseSelect.value = current;
+    }
+  }
+
+  if (!box) return;
+
+  if (!state.classAlerts.length) {
+    box.innerHTML = '<div class="update-item"><p class="helper-text">No alerts published yet.</p></div>';
+    return;
+  }
+
+  const sorted = [...state.classAlerts].sort(
+    (a, b) => `${a.eventDate}${a.eventTime}`.localeCompare(`${b.eventDate}${b.eventTime}`)
+  );
+
+  box.innerHTML = sorted
+    .map((alert) => {
+      const meta = ALERT_TYPE_META[alert.eventType] || ALERT_TYPE_META.other;
+      const timeLabel = alert.eventTime ? ` at ${alert.eventTime}` : "";
+      const courseLabel = alert.courseKey ? `<p class="update-meta">Course: ${escapeHtml(alert.courseKey)}</p>` : "";
+      const notes = alert.notes
+        ? `<p class="update-meta" style="white-space: pre-wrap;">${escapeHtml(alert.notes)}</p>`
+        : "";
+      const deleteBtn = isAdmin
+        ? `<button class="ghost-btn" type="button" data-delete-alert="${escapeHtml(alert.id)}" style="margin-top: 0.4rem;">Delete</button>`
+        : "";
+      return `
+        <article class="update-item">
+          <h3>${meta.icon} ${escapeHtml(alert.title)} <span class="pill-type">${meta.label}</span></h3>
+          <p class="update-meta">${escapeHtml(alert.eventDate)}${timeLabel} | Published by ${escapeHtml(alert.adminId)}</p>
+          ${courseLabel}
+          ${notes}
+          ${deleteBtn}
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderAdminUi() {
   const form = document.querySelector("#admin-update-form");
   const bulkForm = document.querySelector("#admin-bulk-form");
@@ -839,12 +936,15 @@ function renderAdminUi() {
   const auditPanel = document.querySelector(".audit-panel");
   if (!form || !status || !loginBtn || !logoutBtn || !courseSelect) return;
 
+  const alertForm = document.querySelector("#alert-form");
+
   if (state.adminSession && state.adminSession.adminId) {
     if (auditPanel) auditPanel.style.display = "block";
     status.textContent = `Signed in as ${state.adminSession.adminId}`;
     if (tabs) tabs.style.display = "flex";
     form.style.display = "grid";
     bulkForm.style.display = "none";
+    if (alertForm) alertForm.style.display = "none";
     if (tabSingleBtn) tabSingleBtn.classList.add("active");
     loginBtn.style.display = "none";
     logoutBtn.style.display = "inline-block";
@@ -854,6 +954,7 @@ function renderAdminUi() {
     if (tabs) tabs.style.display = "none";
     form.style.display = "none";
     bulkForm.style.display = "none";
+    if (alertForm) alertForm.style.display = "none";
     loginBtn.style.display = "inline-block";
     logoutBtn.style.display = "none";
   }
@@ -1095,12 +1196,16 @@ function buildTimetableData() {
   const currentWeekEvents = selectedCourseEvents.filter((event) => isEventInWeek(event, weekRange));
   const rows = DAYS.map((day) => ({ key: day, label: day }));
 
+  const weekAlerts = state.classAlerts.filter((alert) => {
+    const d = parseYmdToLocalDate(alert.eventDate);
+    return d && d >= weekRange.start && d <= weekRange.end;
+  });
+
   const slots = Array.from(
-    new Set(
-      currentWeekEvents
-        .map((event) => getSlotLabel(event.start))
-        .filter(Boolean)
-    )
+    new Set([
+      ...currentWeekEvents.map((event) => getSlotLabel(event.start)).filter(Boolean),
+      ...weekAlerts.map((alert) => alert.eventTime || "23:59")
+    ])
   ).sort();
 
   const grid = {};
@@ -1132,6 +1237,25 @@ function buildTimetableData() {
     if (!seen.has(dedupeKey)) {
       grid[day][slot].push(entry);
     }
+  }
+
+  for (const alert of weekAlerts) {
+    const d = parseYmdToLocalDate(alert.eventDate);
+    const day = DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1];
+    const slot = alert.eventTime || "23:59";
+    if (!grid[day] || !grid[day][slot]) continue;
+
+    grid[day][slot].push({
+      isAlert: true,
+      alertId: alert.id,
+      alertType: alert.eventType,
+      subject: alert.title,
+      location: alert.courseKey || "",
+      section: "",
+      batch: "",
+      cancelled: false,
+      isNew: false
+    });
   }
 
   for (const row of rows) {
@@ -1222,21 +1346,28 @@ function renderTimetable() {
         if (!entries.length) return "<td></td>";
 
         const content = entries
-          .map(
-            (entry) =>
-              `<span class="${entry.isNew ? 'slot-title slot-new' : entry.cancelled ? 'slot-title slot-cancelled' : 'slot-title'}">${escapeHtml(entry.subject)}${
-                entry.batch ? ` (Batch ${escapeHtml(entry.batch)})` : ""
-              }</span>${entry.isNew ? '<span class="slot-new-badge">New</span>' : ''} ${entry.cancelled ? '<span class="slot-cancelled-badge">Cancelled</span>' : ''}<span class="${entry.isNew ? 'slot-venue slot-new' : entry.cancelled ? 'slot-venue slot-cancelled' : 'slot-venue'}">${escapeHtml(entry.location || "Venue TBA")}</span>`
-          )
+          .map((entry) => {
+            if (entry.isAlert) {
+              const meta = ALERT_TYPE_META[entry.alertType] || ALERT_TYPE_META.other;
+              return `<span class="slot-title slot-alert">${meta.icon} ${escapeHtml(entry.subject)}</span>${
+                entry.location ? `<span class="slot-venue">${escapeHtml(entry.location)}</span>` : ""
+              }`;
+            }
+            return `<span class="${entry.isNew ? 'slot-title slot-new' : entry.cancelled ? 'slot-title slot-cancelled' : 'slot-title'}">${escapeHtml(entry.subject)}${
+              entry.batch ? ` (Batch ${escapeHtml(entry.batch)})` : ""
+            }</span>${entry.isNew ? '<span class="slot-new-badge">New</span>' : ''} ${entry.cancelled ? '<span class="slot-cancelled-badge">Cancelled</span>' : ''}<span class="${entry.isNew ? 'slot-venue slot-new' : entry.cancelled ? 'slot-venue slot-cancelled' : 'slot-venue'}">${escapeHtml(entry.location || "Venue TBA")}</span>`;
+          })
           .join("<hr>");
 
         const hasCancelled = entries.some((e) => e.cancelled);
         const hasNew = entries.some((e) => e.isNew);
-        const hasActive = entries.some((e) => !e.cancelled && !e.isNew);
+        const hasAlert = entries.some((e) => e.isAlert);
+        const hasActive = entries.some((e) => !e.cancelled && !e.isNew && !e.isAlert);
         let tdClass = "filled";
         if (!hasActive && hasCancelled) tdClass = "filled cell-all-cancelled";
         else if (hasNew && !hasActive) tdClass = "filled cell-all-new";
         else if (hasNew) tdClass = "filled cell-has-new";
+        if (hasAlert) tdClass += " cell-has-alert";
         return `<td class="${tdClass}">${content}</td>`;
       })
       .join("");
@@ -1254,6 +1385,7 @@ function rerender() {
   renderTimetable();
   renderActiveUpdates();
   renderAuditLog();
+  renderAlertsList();
   renderAdminUi();
   toggleAdminFieldVisibility();
 }
@@ -1536,28 +1668,92 @@ function bindEvents() {
     });
   }
 
+  const alertForm = document.querySelector("#alert-form");
+  const alertsList = document.querySelector("#alerts-list");
+
+  if (alertForm) {
+    alertForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!state.adminSession || !state.adminSession.adminId) {
+        window.alert("Sign in as admin first.");
+        return;
+      }
+
+      const title = String(document.querySelector("#alert-title")?.value || "").trim();
+      const eventType = String(document.querySelector("#alert-type")?.value || "").trim();
+      const courseKey = String(document.querySelector("#alert-course")?.value || "").trim();
+      const eventDate = String(document.querySelector("#alert-date")?.value || "").trim();
+      const eventTime = String(document.querySelector("#alert-time")?.value || "").trim();
+      const notes = String(document.querySelector("#alert-notes")?.value || "").trim();
+
+      if (!title || !eventDate) {
+        window.alert("Title and date are required.");
+        return;
+      }
+
+      const submitBtn = document.querySelector("#alert-add");
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Publishing..."; }
+
+      try {
+        await publishAlert({ title, eventType, courseKey, eventDate, eventTime, notes });
+        await fetchPublicData();
+        rerender();
+        alertForm.reset();
+      } catch (err) {
+        window.alert(err.message || "Failed to publish alert.");
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Publish alert"; }
+      }
+    });
+  }
+
+  if (alertsList) {
+    alertsList.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-delete-alert]");
+      if (!btn) return;
+
+      const id = btn.getAttribute("data-delete-alert");
+      if (!id) return;
+
+      btn.disabled = true;
+      try {
+        await deleteAlert(id);
+        await fetchPublicData();
+        rerender();
+      } catch (err) {
+        window.alert(err.message || "Failed to delete alert.");
+        btn.disabled = false;
+      }
+    });
+  }
+
   const adminTabSingleBtn = document.querySelector("#admin-tab-single");
   const adminTabBulkBtn = document.querySelector("#admin-tab-bulk");
+  const adminTabAlertsBtn = document.querySelector("#admin-tab-alerts");
   const adminBulkForm = document.querySelector("#admin-bulk-form");
   const adminBulkInput = document.querySelector("#admin-bulk-input");
   const adminBulkPreview = document.querySelector("#admin-bulk-preview");
 
+  const showAdminTab = (active) => {
+    adminTabSingleBtn?.classList.toggle("active", active === "single");
+    adminTabBulkBtn?.classList.toggle("active", active === "bulk");
+    adminTabAlertsBtn?.classList.toggle("active", active === "alerts");
+    adminUpdateForm.style.display = active === "single" ? "grid" : "none";
+    adminBulkForm.style.display = active === "bulk" ? "grid" : "none";
+    if (alertForm) alertForm.style.display = active === "alerts" ? "grid" : "none";
+  };
+
   if (adminTabSingleBtn) {
-    adminTabSingleBtn.addEventListener("click", () => {
-      adminTabSingleBtn.classList.add("active");
-      adminTabBulkBtn?.classList.remove("active");
-      adminUpdateForm.style.display = "grid";
-      adminBulkForm.style.display = "none";
-    });
+    adminTabSingleBtn.addEventListener("click", () => showAdminTab("single"));
   }
 
   if (adminTabBulkBtn) {
-    adminTabBulkBtn.addEventListener("click", () => {
-      adminTabBulkBtn.classList.add("active");
-      adminTabSingleBtn?.classList.remove("active");
-      adminUpdateForm.style.display = "none";
-      adminBulkForm.style.display = "grid";
-    });
+    adminTabBulkBtn.addEventListener("click", () => showAdminTab("bulk"));
+  }
+
+  if (adminTabAlertsBtn) {
+    adminTabAlertsBtn.addEventListener("click", () => showAdminTab("alerts"));
   }
 
   if (adminBulkInput) {

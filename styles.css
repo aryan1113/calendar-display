@@ -154,17 +154,21 @@ h2 {
 
 .admin-auth-row input,
 .admin-update-form input,
-.admin-update-form select {
+.admin-update-form select,
+.admin-update-form textarea {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.62rem 0.75rem;
   font-size: 0.95rem;
   background: #fff;
+  font-family: inherit;
+  resize: vertical;
 }
 
 .admin-auth-row input:focus,
 .admin-update-form input:focus,
-.admin-update-form select:focus {
+.admin-update-form select:focus,
+.admin-update-form textarea:focus {
   outline: 2px solid #99d6c6;
   border-color: var(--accent);
 }
@@ -664,6 +668,14 @@ td.filled {
 
 .cell-has-new {
   background: linear-gradient(135deg, #ffffff 0%, #e8f5e9 100%) !important;
+}
+
+.slot-alert {
+  color: #7a4a00;
+}
+
+.cell-has-alert {
+  border: 2px dashed #e0a638 !important;
 }
 
 .passcode-wrap {

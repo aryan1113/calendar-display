@@ -121,6 +121,18 @@
         </div>
       </section>
 
+      <section class="alerts-panel" aria-label="Class-wide alerts for quizzes, simulations and deadlines">
+        <div class="updates-head">
+          <h2>Class Alerts</h2>
+          <p class="helper-text">
+            Quizzes, simulation classes, project submissions and other deadlines published by admins.
+            They also show up inline in your timetable above.
+          </p>
+        </div>
+
+        <div id="alerts-list" class="active-updates"></div>
+      </section>
+
       <section class="updates-panel" aria-label="Class updates and announcements">
         <div class="updates-head">
           <h2>Live Class Updates</h2>
@@ -156,6 +168,7 @@
         <div class="admin-tabs">
           <button id="admin-tab-single" class="admin-tab-btn active" type="button">Single Update</button>
           <button id="admin-tab-bulk" class="admin-tab-btn" type="button">Bulk Import</button>
+          <button id="admin-tab-alerts" class="admin-tab-btn" type="button">Class Alerts</button>
         </div>
 
         <form id="admin-update-form" class="admin-update-form" style="display: none;">
@@ -207,6 +220,38 @@
           <p id="admin-bulk-preview" class="admin-bulk-preview"></p>
           <div class="selected-actions">
             <button id="admin-bulk-import" class="ghost-btn" type="submit">Import bulk schedule</button>
+          </div>
+        </form>
+
+        <form id="alert-form" class="admin-update-form" style="display: none;">
+          <div class="admin-form-grid">
+            <label for="alert-title">Title</label>
+            <input id="alert-title" type="text" maxlength="120" placeholder="e.g., Game Theory Quiz 2" required />
+
+            <label for="alert-type">Type</label>
+            <select id="alert-type" required>
+              <option value="quiz">Quiz</option>
+              <option value="simulation">Simulation class</option>
+              <option value="submission">Project submission</option>
+              <option value="deadline">Deadline</option>
+              <option value="other">Other</option>
+            </select>
+
+            <label for="alert-course">Course (optional)</label>
+            <select id="alert-course"><option value="">None</option></select>
+
+            <label for="alert-date">Date</label>
+            <input id="alert-date" type="date" required />
+
+            <label for="alert-time">Time (optional)</label>
+            <input id="alert-time" type="time" />
+
+            <label for="alert-notes">Notes (optional)</label>
+            <textarea id="alert-notes" maxlength="1000" rows="4" placeholder="Optional note"></textarea>
+          </div>
+
+          <div class="selected-actions">
+            <button id="alert-add" class="ghost-btn" type="submit">Publish alert</button>
           </div>
         </form>
       </section>
